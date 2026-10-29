@@ -56,6 +56,11 @@ public class CalendarActivity extends Activity {
     final Handler handler = new Handler();
     final List<Ev> events = new ArrayList<>();
     boolean loading;
+    /** Months away from the current one (0 = this month), and what each month holds. */
+    int shift;
+    TextView[] monthBtns;
+    final java.util.Map<Integer, List<Ev>> monthCache = new java.util.HashMap<>();
+    int monthLoadId;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -82,9 +87,26 @@ public class CalendarActivity extends Activity {
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(-2, -2);
         dlp.topMargin = Ui.px(this, 4);
         left.addView(dateView, dlp);
+        // Month controls: previous, back to today, next.
+        LinearLayout nav = new LinearLayout(this);
+        nav.setOrientation(LinearLayout.HORIZONTAL);
+        nav.setClipChildren(false);
+        TextView prev = pill("\u2039", v -> shiftMonth(-1)), todayBtn = pill("Oggi", v -> shiftMonth(0)),
+                next = pill("\u203a", v -> shiftMonth(1));
+        for (TextView nb : new TextView[]{prev, todayBtn, next}) {
+            LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(-2, -2);
+            nlp.rightMargin = Ui.px(this, 8);
+            nav.addView(nb, nlp);
+        }
+        LinearLayout.LayoutParams navLp = new LinearLayout.LayoutParams(-2, -2);
+        navLp.topMargin = Ui.px(this, 22);
+        nav.setPadding(Ui.px(this, 6), Ui.px(this, 6), Ui.px(this, 6), Ui.px(this, 6));  // room for the focus zoom
+        left.addView(nav, navLp);
+        left.setClipChildren(false);
+        monthBtns = new TextView[]{prev, todayBtn, next};
         month = new MonthView(this);
         LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(Ui.px(this, 340), Ui.px(this, 250));
-        mlp.topMargin = Ui.px(this, 26);
+        mlp.topMargin = Ui.px(this, 10);
         left.addView(month, mlp);
         FrameLayout.LayoutParams llp = new FrameLayout.LayoutParams(Ui.px(this, 340), -2, Gravity.START | Gravity.CENTER_VERTICAL);
         llp.leftMargin = Ui.px(this, 64);
@@ -122,6 +144,7 @@ public class CalendarActivity extends Activity {
 
         refreshDate();
         load();
+        monthBtns[1].requestFocus();
     }
 
     @Override
@@ -174,63 +197,150 @@ public class CalendarActivity extends Activity {
         }
     }
 
+    /** First instant of the month {@code months} away from now. */
+    static long monthStart(int months) {
+        Calendar from = Calendar.getInstance();
+        from.set(Calendar.DAY_OF_MONTH, 1);
+        from.set(Calendar.HOUR_OF_DAY, 0);
+        from.set(Calendar.MINUTE, 0);
+        from.set(Calendar.SECOND, 0);
+        from.set(Calendar.MILLISECOND, 0);
+        from.add(Calendar.MONTH, months);
+        return from.getTimeInMillis();
+    }
+
+    /** Events of every chosen calendar between two instants (blocking; call off the UI thread). */
+    static List<Ev> fetch(Context c, long fromMs, long endMs) throws Exception {
+        List<Ev> found = new ArrayList<>();
+        int idx = 0;
+        for (String[] cal : HomeAssistant.calendars(c)) {
+            if (!HomeAssistant.calendarOn(c, cal[0], cal[1])) continue;
+            int color = PALETTE[idx++ % PALETTE.length];
+            try {
+                JSONArray a = HomeAssistant.calendarEvents(c, cal[0], utc(fromMs), utc(endMs));
+                for (int i = 0; i < a.length(); i++) {
+                    JSONObject o = a.getJSONObject(i);
+                    Ev e = new Ev();
+                    boolean[] all = {false};
+                    e.start = parse(o.getJSONObject("start"), all);
+                    e.allDay = all[0];
+                    boolean[] ignore = {false};
+                    e.end = parse(o.getJSONObject("end"), ignore);
+                    e.title = o.optString("summary", "");
+                    e.where = o.isNull("location") ? "" : o.optString("location", "");
+                    e.cal = cal[1];
+                    e.color = color;
+                    if (e.start > 0) found.add(e);
+                }
+            } catch (Exception ignored) {
+                // one calendar failing does not hide the others
+            }
+        }
+        Collections.sort(found, (x, y) -> Long.compare(x.start, y.start));
+        return found;
+    }
+
+    /** Previous / next month (+1 / -1), or back to this one (0). */
+    void shiftMonth(int delta) {
+        shift = delta == 0 ? 0 : shift + delta;
+        month.setShift(shift);
+        if (shift == 0) {
+            month.setEvents(events);
+            renderList();
+            return;
+        }
+        List<Ev> cached = monthCache.get(shift);
+        if (cached != null) {
+            month.setEvents(cached);
+            renderMonthList(cached);
+            return;
+        }
+        if (!HomeAssistant.configured(this)) {
+            month.setEvents(new ArrayList<>());
+            renderMonthList(new ArrayList<>());
+            return;
+        }
+        final int id = ++monthLoadId, at = shift;
+        month.setEvents(new ArrayList<>());
+        list.removeAllViews();
+        status.setText("Carico gli eventi\u2026");
+        final Context c = getApplicationContext();
+        new Thread(() -> {
+            List<Ev> found = new ArrayList<>();
+            try {
+                found = fetch(c, monthStart(at), monthStart(at + 1));
+            } catch (Exception ignored) {
+                // shows an empty month
+            }
+            List<Ev> res = found;
+            runOnUiThread(() -> {
+                if (isFinishing() || id != monthLoadId) return;
+                monthCache.put(at, res);
+                if (shift == at) {
+                    month.setEvents(res);
+                    renderMonthList(res);
+                }
+            });
+        }).start();
+    }
+
+    /** The events of another month, grouped by day. */
+    void renderMonthList(List<Ev> evs) {
+        list.removeAllViews();
+        Calendar cal = Calendar.getInstance();
+        cal.setTimeInMillis(monthStart(shift));
+        String m = new SimpleDateFormat("MMMM yyyy", Locale.ITALY).format(cal.getTime());
+        status.setText(evs.isEmpty() ? "Niente in programma a " + m : evs.size() + " eventi \u00b7 " + m);
+        SimpleDateFormat dayFmt = new SimpleDateFormat("EEEE d MMMM", Locale.ITALY);
+        SimpleDateFormat hm = new SimpleDateFormat("HH:mm", Locale.ITALY);
+        long lastDay = -1;
+        for (int i = 0; i < evs.size() && i < 80; i++) {
+            Ev e = evs.get(i);
+            long d = dayStart(e.start);
+            if (d != lastDay) {
+                lastDay = d;
+                String label = dayFmt.format(new Date(d));
+                TextView h = text(label.substring(0, 1).toUpperCase(Locale.ITALY) + label.substring(1), 14, "semibold", 0.9f);
+                LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(-2, -2);
+                hlp.topMargin = Ui.px(this, i == 0 ? 0 : 14);
+                hlp.bottomMargin = Ui.px(this, 6);
+                list.addView(h, hlp);
+            }
+            list.addView(eventRow(e, e.allDay ? "Tutto il giorno" : hm.format(new Date(e.start))
+                    + (e.end > e.start ? " \u2013 " + hm.format(new Date(e.end)) : "")));
+        }
+        listScroll.scrollTo(0, 0);
+    }
+
     void load() {
         if (!HomeAssistant.configured(this)) {
-            status.setText("Collega Home Assistant (Impostazioni → Home Assistant) per vedere gli eventi.");
+            status.setText("Collega Home Assistant (Impostazioni \u2192 Home Assistant) per vedere gli eventi.");
             return;
         }
         if (loading) return;
         loading = true;
-        status.setText("Carico gli eventi…");
+        status.setText("Carico gli eventi\u2026");
         final Context c = getApplicationContext();
         new Thread(() -> {
             List<Ev> found = new ArrayList<>();
             String err = null;
             try {
-                Calendar from = Calendar.getInstance();
-                from.set(Calendar.DAY_OF_MONTH, 1);
-                from.set(Calendar.HOUR_OF_DAY, 0);
-                from.set(Calendar.MINUTE, 0);
-                from.set(Calendar.SECOND, 0);
-                from.set(Calendar.MILLISECOND, 0);
-                long end = System.currentTimeMillis() + 45L * 86400000L;
-                int idx = 0;
-                for (String[] cal : HomeAssistant.calendars(c)) {
-                    if (!HomeAssistant.calendarOn(c, cal[0], cal[1])) continue;
-                    int color = PALETTE[idx++ % PALETTE.length];
-                    try {
-                        JSONArray a = HomeAssistant.calendarEvents(c, cal[0], utc(from.getTimeInMillis()), utc(end));
-                        for (int i = 0; i < a.length(); i++) {
-                            JSONObject o = a.getJSONObject(i);
-                            Ev e = new Ev();
-                            boolean[] all = {false};
-                            e.start = parse(o.getJSONObject("start"), all);
-                            e.allDay = all[0];
-                            boolean[] ignore = {false};
-                            e.end = parse(o.getJSONObject("end"), ignore);
-                            e.title = o.optString("summary", "");
-                            e.where = o.isNull("location") ? "" : o.optString("location", "");
-                            e.cal = cal[1];
-                            e.color = color;
-                            if (e.start > 0) found.add(e);
-                        }
-                    } catch (Exception ignored) {
-                        // one calendar failing does not hide the others
-                    }
-                }
+                found = fetch(c, monthStart(0), System.currentTimeMillis() + 45L * 86400000L);
             } catch (Exception e) {
                 err = e.getMessage();
             }
-            Collections.sort(found, (x, y) -> Long.compare(x.start, y.start));
+            List<Ev> done = found;
             String error = err;
             runOnUiThread(() -> {
                 loading = false;
                 if (isFinishing()) return;
                 if (error != null) status.setText("Non riesco a leggere i calendari: " + error);
                 events.clear();
-                events.addAll(found);
-                month.setEvents(events);
-                renderList();
+                events.addAll(done);
+                if (shift == 0) {
+                    month.setEvents(events);
+                    renderList();
+                }
             });
         }).start();
     }
@@ -338,6 +448,30 @@ public class CalendarActivity extends Activity {
         return super.dispatchKeyEvent(ev);
     }
 
+    /** A round-ended button, white when focused (like the rest of Hume). */
+    TextView pill(String label, View.OnClickListener click) {
+        TextView t = text(label, label.length() == 1 ? 20 : 13, "semibold", 1f);
+        t.setGravity(Gravity.CENTER);
+        t.setFocusable(true);
+        t.setClickable(true);
+        int ph = Ui.px(this, label.length() == 1 ? 16 : 18), pv = Ui.px(this, 5);
+        t.setPadding(ph, pv, ph, pv);
+        GradientDrawable idle = new GradientDrawable();
+        idle.setCornerRadius(Ui.px(this, 40));
+        idle.setColor(0x40FFFFFF);
+        GradientDrawable lit = new GradientDrawable();
+        lit.setCornerRadius(Ui.px(this, 40));
+        lit.setColor(0xFFF4F4F6);
+        t.setBackground(idle);
+        t.setOnFocusChangeListener((v, has) -> {
+            t.setBackground(has ? lit : idle);
+            t.setTextColor(has ? 0xFF111114 : Color.WHITE);
+            v.animate().scaleX(has ? 1.08f : 1f).scaleY(has ? 1.08f : 1f).setDuration(Motion.d(140)).start();
+        });
+        t.setOnClickListener(click);
+        return t;
+    }
+
     TextView text(String s, float size, String weight, float alpha) {
         TextView t = new TextView(this);
         t.setText(s);
@@ -352,6 +486,20 @@ public class CalendarActivity extends Activity {
     static final class MonthView extends View {
         final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
         final Set<Integer> busy = new HashSet<>();   // day of month
+        int shift;
+
+        void setShift(int months) {
+            shift = months;
+            busy.clear();
+            invalidate();
+        }
+
+        Calendar shown() {
+            Calendar c = Calendar.getInstance();
+            c.set(Calendar.DAY_OF_MONTH, 1);
+            c.add(Calendar.MONTH, shift);
+            return c;
+        }
 
         MonthView(Context c) {
             super(c);
@@ -359,7 +507,7 @@ public class CalendarActivity extends Activity {
 
         void setEvents(List<Ev> events) {
             busy.clear();
-            Calendar now = Calendar.getInstance(), c = Calendar.getInstance();
+            Calendar now = shown(), c = Calendar.getInstance();
             for (Ev e : events) {
                 c.setTimeInMillis(e.start);
                 if (c.get(Calendar.YEAR) == now.get(Calendar.YEAR) && c.get(Calendar.MONTH) == now.get(Calendar.MONTH)) {
@@ -372,8 +520,8 @@ public class CalendarActivity extends Activity {
         @Override
         protected void onDraw(Canvas cv) {
             float u = Ui.unit(getContext()), w = getWidth(), colW = w / 7f;
-            Calendar now = Calendar.getInstance();
-            int today = now.get(Calendar.DAY_OF_MONTH);
+            Calendar now = shown();
+            int today = shift == 0 ? Calendar.getInstance().get(Calendar.DAY_OF_MONTH) : -1;
             Calendar first = (Calendar) now.clone();
             first.set(Calendar.DAY_OF_MONTH, 1);
             int offset = (first.get(Calendar.DAY_OF_WEEK) + 5) % 7;   // Monday first
