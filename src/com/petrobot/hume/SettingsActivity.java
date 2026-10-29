@@ -710,14 +710,12 @@ public class SettingsActivity extends Activity {
                 }
                 // Saved when the dialog closes (Back or Done): on a long list the buttons can be pushed
                 // off the screen, so closing must be enough.
-                dialog("Calendars").setMultiChoiceItems(names, on, (d, i, checked) -> on[i] = checked)
-                        .setPositiveButton("Done", null)
-                        .setOnDismissListener(d -> {
-                            List<String> ids = new ArrayList<>();
-                            for (int i = 0; i < on.length; i++) if (on[i]) ids.add(all.get(i)[0]);
-                            HomeAssistant.setCalendars(this, ids);
-                            refreshAll();
-                        }).show();
+                pickMany("Calendars", names, on, () -> {
+                    List<String> ids = new ArrayList<>();
+                    for (int i = 0; i < on.length; i++) if (on[i]) ids.add(all.get(i)[0]);
+                    HomeAssistant.setCalendars(this, ids);
+                    refreshAll();
+                });
             });
         }).start();
     }
@@ -813,19 +811,18 @@ public class SettingsActivity extends Activity {
                     names[i] = g.get(i).name;
                     for (HomeAssistant.Item it : cur) if (it.id.equals(g.get(i).id)) on[i] = true;
                 }
-                dialog(title).setMultiChoiceItems(names, on, (d, i, checked) -> on[i] = checked)
-                        .setOnDismissListener(d -> {
-                            List<HomeAssistant.Item> next = new ArrayList<>();
-                            for (HomeAssistant.Item it : cur) if (!haGroup(it.domain()).equals(group)) next.add(it);
-                            for (int i = 0; i < on.length; i++) if (on[i]) next.add(new HomeAssistant.Item(g.get(i).id, g.get(i).name));
-                            if (next.size() > HomeAssistant.MAX_ITEMS) {
-                                Toast.makeText(this, "The panel holds " + HomeAssistant.MAX_ITEMS + " tiles; extras were dropped.",
-                                        Toast.LENGTH_LONG).show();
-                                next = next.subList(0, HomeAssistant.MAX_ITEMS);
-                            }
-                            HomeAssistant.setItems(this, next);
-                            refreshAll();
-                        }).show();
+                pickMany(title, names, on, () -> {
+                    List<HomeAssistant.Item> next = new ArrayList<>();
+                    for (HomeAssistant.Item it : cur) if (!haGroup(it.domain()).equals(group)) next.add(it);
+                    for (int i = 0; i < on.length; i++) if (on[i]) next.add(new HomeAssistant.Item(g.get(i).id, g.get(i).name));
+                    if (next.size() > HomeAssistant.MAX_ITEMS) {
+                        Toast.makeText(this, "The panel holds " + HomeAssistant.MAX_ITEMS + " tiles; extras were dropped.",
+                                Toast.LENGTH_LONG).show();
+                        next = next.subList(0, HomeAssistant.MAX_ITEMS);
+                    }
+                    HomeAssistant.setItems(this, next);
+                    refreshAll();
+                });
             });
         }).start();
     }
@@ -1117,6 +1114,96 @@ public class SettingsActivity extends Activity {
     public boolean dispatchKeyEvent(android.view.KeyEvent ev) {
         MainActivity.navSound(this, ev);
         return super.dispatchKeyEvent(ev) || Clicks.moveFocus(getWindow(), ev);
+    }
+
+    /**
+     * A list of ticks you can scroll, with "Done" and "Cancel" pinned in a bar at the bottom that is
+     * always visible (the system dialog pushes its own buttons off screen on long lists). The choice
+     * is applied by {@code done} when you press Done or Back; Cancel throws it away.
+     */
+    void pickMany(String title, String[] names, boolean[] on, Runnable done) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int h = Ui.px(this, 330);
+        ScrollView sv = new ScrollView(this);
+        sv.setVerticalScrollBarEnabled(false);
+        LinearLayout rows = new LinearLayout(this);
+        rows.setOrientation(LinearLayout.VERTICAL);
+        sv.addView(rows);
+        box.addView(sv, new LinearLayout.LayoutParams(Ui.px(this, 420), h));
+        boolean[] keep = {true};
+        AlertDialog[] dlg = new AlertDialog[1];
+        for (int k = 0; k < names.length; k++) {
+            int idx = k;
+            TextView r = new TextView(this);
+            r.setTypeface(Ui.font(this, "medium"));
+            Ui.textSize(r, 14);
+            r.setSingleLine(true);
+            r.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            r.setFocusable(true);
+            r.setClickable(true);
+            r.setPadding(Ui.px(this, 14), Ui.px(this, 9), Ui.px(this, 14), Ui.px(this, 9));
+            Runnable paint = () -> r.setText((on[idx] ? "\u2611  " : "\u2610  ") + names[idx]);
+            paint.run();
+            GradientDrawable lit = new GradientDrawable();
+            lit.setCornerRadius(Ui.px(this, 8));
+            lit.setColor(0xFFF2F2F7);
+            r.setTextColor(Color.WHITE);
+            r.setOnFocusChangeListener((v, has) -> {
+                r.setBackground(has ? lit : null);
+                r.setTextColor(has ? 0xFF111114 : Color.WHITE);
+            });
+            r.setOnClickListener(v -> {
+                on[idx] = !on[idx];
+                paint.run();
+            });
+            rows.addView(r, new LinearLayout.LayoutParams(-1, -2));
+        }
+        // The bar: always under the list.
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.END);
+        bar.setPadding(0, Ui.px(this, 10), 0, 0);
+        bar.addView(barButton("Cancel", () -> {
+            keep[0] = false;
+            dlg[0].dismiss();
+        }));
+        bar.addView(barButton("Done", () -> dlg[0].dismiss()));
+        box.addView(bar, new LinearLayout.LayoutParams(-1, -2));
+        int pad = Ui.px(this, 16);
+        box.setPadding(pad, 0, pad, pad / 2);
+        dlg[0] = dialog(title).setView(box).setOnDismissListener(d -> {
+            if (keep[0]) done.run();
+        }).create();
+        dlg[0].show();
+    }
+
+    TextView barButton(String label, Runnable click) {
+        TextView b = new TextView(this);
+        b.setText(label);
+        b.setGravity(Gravity.CENTER);
+        b.setTypeface(Ui.font(this, "semibold"));
+        Ui.textSize(b, 15);
+        b.setTextColor(Color.WHITE);
+        b.setFocusable(true);
+        b.setClickable(true);
+        b.setPadding(Ui.px(this, 24), Ui.px(this, 9), Ui.px(this, 24), Ui.px(this, 9));
+        GradientDrawable idle = new GradientDrawable();
+        idle.setCornerRadius(Ui.px(this, 30));
+        idle.setColor(0x40FFFFFF);
+        GradientDrawable lit = new GradientDrawable();
+        lit.setCornerRadius(Ui.px(this, 30));
+        lit.setColor(0xFFF2F2F7);
+        b.setBackground(idle);
+        b.setOnFocusChangeListener((v, has) -> {
+            b.setBackground(has ? lit : idle);
+            b.setTextColor(has ? 0xFF111114 : Color.WHITE);
+        });
+        b.setOnClickListener(v -> click.run());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.leftMargin = Ui.px(this, 10);
+        b.setLayoutParams(lp);
+        return b;
     }
 
     AlertDialog.Builder dialog(String title) {
