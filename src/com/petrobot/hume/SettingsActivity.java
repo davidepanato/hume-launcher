@@ -672,7 +672,12 @@ public class SettingsActivity extends Activity {
         });
         row("Weather entity", () -> HomeAssistant.weatherEntity(this).isEmpty() ? "Choose\u2026" : HomeAssistant.weatherEntity(this),
                 this::chooseHaWeather);
-        section("Home panel (Control Center \u2192 house)");
+        section("Calendar (tap the clock on Home)");
+        row("Calendars", () -> {
+            String saved = HomeAssistant.prefs(this).getString(HomeAssistant.K_CALENDARS, null);
+            return saved == null ? "Automatic" : saved.isEmpty() ? "None" : saved.split(",").length + " chosen";
+        }, this::chooseHaCalendars);
+        section("Home panel (house button on Home)");
         row("Scenes, scripts & buttons", () -> countHa("actions"), () -> chooseHaItems("actions", "Scenes, scripts & buttons"));
         row("Lights & switches", () -> countHa("devices"), () -> chooseHaItems("devices", "Lights & switches"));
         row("Status (sensors)", () -> countHa("status"), () -> chooseHaItems("status", "Status tiles"));
@@ -683,6 +688,35 @@ public class SettingsActivity extends Activity {
                             HomeAssistant.disconnect(this);
                             show(HASS);
                         }).setNegativeButton("Cancel", null).show());
+    }
+
+    /** Which Home Assistant calendars feed the clock's event list. */
+    void chooseHaCalendars() {
+        Toast.makeText(this, "Loading from Home Assistant\u2026", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            List<String[]> all;
+            try {
+                all = HomeAssistant.calendars(this);
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(this, "Can't connect: " + e.getMessage(), Toast.LENGTH_LONG).show());
+                return;
+            }
+            runOnUiThread(() -> {
+                String[] names = new String[all.size()];
+                boolean[] on = new boolean[all.size()];
+                for (int i = 0; i < names.length; i++) {
+                    names[i] = all.get(i)[1];
+                    on[i] = HomeAssistant.calendarOn(this, all.get(i)[0], all.get(i)[1]);
+                }
+                dialog("Calendars").setMultiChoiceItems(names, on, (d, i, checked) -> on[i] = checked)
+                        .setPositiveButton("Done", (d, w) -> {
+                            List<String> ids = new ArrayList<>();
+                            for (int i = 0; i < on.length; i++) if (on[i]) ids.add(all.get(i)[0]);
+                            HomeAssistant.setCalendars(this, ids);
+                            refreshAll();
+                        }).setNegativeButton("Cancel", null).show();
+            });
+        }).start();
     }
 
     /** Number of panel tiles in a group, as a row value. */

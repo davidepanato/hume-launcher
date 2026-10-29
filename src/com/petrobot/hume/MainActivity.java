@@ -542,6 +542,25 @@ public class MainActivity extends Activity {
         timeChip.addView(netIcon, nlp);
         timeChip.addView(time);
         clockBox.addView(timeChip, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, btn));
+        // The clock opens the calendar: today's date, the month and the coming events.
+        clockChip = timeChip;
+        timeChip.setFocusable(true);
+        timeChip.setClickable(true);
+        GradientDrawable chipLit = new GradientDrawable();
+        chipLit.setCornerRadius(btn / 2f);
+        chipLit.setColor(Color.WHITE);
+        timeChip.setOnFocusChangeListener((v, has) -> {
+            timeChip.setBackground(has ? chipLit : chipBg);
+            time.setTextColor(has ? 0xFF111114 : Color.WHITE);
+            time.setShadowLayer(has ? 0 : dp(8), 0, has ? 0 : dp(1), 0x99000000);
+            netIcon.setColorFilter(has && netState == 2 ? 0xFF111114 : 0, android.graphics.PorterDuff.Mode.SRC_IN);
+            if (!has) netIcon.clearColorFilter();
+            v.animate().scaleX(has ? 1.06f : 1f).scaleY(has ? 1.06f : 1f).setDuration(Motion.d(200)).setInterpolator(LIFT).start();
+        });
+        timeChip.setOnClickListener(v -> {
+            returningFromSettings = true;
+            startActivity(new Intent(this, CalendarActivity.class));
+        });
 
         // Refresh: reloads every part of the carousel (recommendations, news, Continue Watching) and weather.
         refreshButton = new ImageView(this);
@@ -2065,6 +2084,7 @@ public class MainActivity extends Activity {
     boolean heroRequested;
 
     ImageView avatarView, ccButton, refreshButton, searchButton, homeButton, netIcon;
+    View clockChip;
     /** The search screen while it is open (its layer is also pickerLayer, so Home and idle treat it as an overlay). */
     SearchPanel search;
     android.net.ConnectivityManager.NetworkCallback netCallback;
@@ -2258,9 +2278,10 @@ public class MainActivity extends Activity {
                 default: return false;
             }
         }
-        if (f == refreshButton || f == searchButton || f == homeButton || f == ccButton || f == avatarView) {
-            // Status row, left to right: Refresh, Search, Home automation (if connected), Control Center, profile.
+        if (f == clockChip || f == refreshButton || f == searchButton || f == homeButton || f == ccButton || f == avatarView) {
+            // Status row, left to right: clock, Refresh, Search, Home automation (if connected), Control Center, profile.
             List<View> row = new ArrayList<>();
+            row.add(clockChip);
             row.add(refreshButton);
             row.add(searchButton);
             if (homeButton.getVisibility() == View.VISIBLE) row.add(homeButton);
@@ -4597,7 +4618,8 @@ public class MainActivity extends Activity {
 
     boolean statusFocused() {
         View f = getCurrentFocus();
-        return f != null && (f == ccButton || f == avatarView || f == refreshButton || f == searchButton || f == homeButton);
+        return f != null && (f == ccButton || f == avatarView || f == refreshButton || f == searchButton || f == homeButton
+                || f == clockChip);
     }
 
     /** Directional focus inside a popover: nearest cell whose centre lies in that direction. */

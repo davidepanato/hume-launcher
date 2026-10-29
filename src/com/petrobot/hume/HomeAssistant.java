@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.TextUtils;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -256,6 +257,45 @@ final class HomeAssistant {
         } catch (Exception e) {
             return "Can't connect: " + e.getMessage();
         }
+    }
+
+    // ---------------------------------------------------------------- calendars
+
+    static final String K_CALENDARS = "calendars";
+
+    /** All calendars in Home Assistant: {entity id, name}. */
+    static List<String[]> calendars(Context c) throws Exception {
+        JSONArray a = new JSONArray(request(c, "GET", "/api/calendars", null));
+        List<String[]> out = new ArrayList<>();
+        for (int i = 0; i < a.length(); i++) {
+            JSONObject o = a.getJSONObject(i);
+            out.add(new String[]{o.getString("entity_id"), o.optString("name", o.getString("entity_id"))});
+        }
+        return out;
+    }
+
+    /** Calendars that are schedules of devices or sensors, not events of the household. */
+    static boolean looksLikeDevice(String name) {
+        String n = name.toLowerCase(Locale.ROOT);
+        return n.contains("weekly plan") || n.contains("workday sensor") || n.contains("flow engine")
+                || n.contains("open home foundation") || n.contains("withings");
+    }
+
+    /** The calendars chosen in Settings; until then every one that holds events, not device schedules. */
+    static boolean calendarOn(Context c, String id, String name) {
+        String saved = prefs(c).getString(K_CALENDARS, null);
+        if (saved == null) return !looksLikeDevice(name);
+        for (String x : saved.split(",")) if (x.equals(id)) return true;
+        return false;
+    }
+
+    static void setCalendars(Context c, List<String> ids) {
+        prefs(c).edit().putString(K_CALENDARS, TextUtils.join(",", ids)).apply();
+    }
+
+    /** Events of one calendar between two instants (UTC "Z" strings), as Home Assistant returns them. */
+    static JSONArray calendarEvents(Context c, String id, String startUtc, String endUtc) throws Exception {
+        return new JSONArray(request(c, "GET", "/api/calendars/" + id + "?start=" + startUtc + "&end=" + endUtc, null));
     }
 
     // ---------------------------------------------------------------- weather

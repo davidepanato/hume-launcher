@@ -16,7 +16,7 @@ final class Glyphs {
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
         p.setColor(color);
         p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(s * 0.085f);
+        p.setStrokeWidth(s * 0.09f);
         p.setStrokeCap(Paint.Cap.ROUND);
         p.setStrokeJoin(Paint.Join.ROUND);
         float m = s / 2f;
@@ -163,13 +163,13 @@ final class Glyphs {
                 c.drawCircle(m, s * 0.36f, s * 0.06f, p);
                 break;
             case "house":  // Home
-                path.moveTo(s * 0.16f, s * 0.48f);
-                path.lineTo(m, s * 0.16f);
-                path.lineTo(s * 0.84f, s * 0.48f);
+                path.moveTo(s * 0.12f, s * 0.5f);
+                path.lineTo(m, s * 0.14f);
+                path.lineTo(s * 0.88f, s * 0.5f);
                 c.drawPath(path, p);
-                r.set(s * 0.26f, s * 0.42f, s * 0.74f, s * 0.84f);
-                c.drawRoundRect(r, s * 0.04f, s * 0.04f, p);
-                c.drawLine(m, s * 0.84f, m, s * 0.64f, p);
+                r.set(s * 0.24f, s * 0.44f, s * 0.76f, s * 0.86f);
+                c.drawRoundRect(r, s * 0.05f, s * 0.05f, p);
+                c.drawLine(m, s * 0.86f, m, s * 0.64f, p);
                 break;
             case "shield":  // Permissions
                 path.moveTo(m, s * 0.12f);
@@ -307,19 +307,24 @@ final class Glyphs {
                 c.drawRect(r, dot);
                 break;
             }
-            case "refresh": {  // circular arrow
-                r.set(s * 0.2f, s * 0.2f, s * 0.8f, s * 0.8f);
-                c.drawArc(r, -60, 300, false, p);
-                float ax = m + s * 0.3f * (float) Math.cos(Math.toRadians(-60)), ay = m + s * 0.3f * (float) Math.sin(Math.toRadians(-60));
-                path.moveTo(ax - s * 0.16f, ay - s * 0.04f);
-                path.lineTo(ax, ay);
-                path.lineTo(ax - s * 0.02f, ay + s * 0.16f);
+            case "refresh": {  // clockwise arrow: an open ring ending in a clear arrowhead
+                float rad = s * 0.29f;
+                r.set(m - rad, m - rad, m + rad, m + rad);
+                c.drawArc(r, -35, 265, false, p);
+                double th = Math.toRadians(230);
+                float tx = m + rad * (float) Math.cos(th), ty = m + rad * (float) Math.sin(th);
+                float dx = -(float) Math.sin(th), dy = (float) Math.cos(th);   // direction of travel
+                float nx = (float) Math.cos(th), ny = (float) Math.sin(th);    // radial
+                float len = s * 0.17f, wid = s * 0.13f;
+                path.moveTo(tx - dx * len + nx * wid, ty - dy * len + ny * wid);
+                path.lineTo(tx, ty);
+                path.lineTo(tx - dx * len - nx * wid, ty - dy * len - ny * wid);
                 c.drawPath(path, p);
                 break;
             }
             case "search":
-                c.drawCircle(s * 0.44f, s * 0.44f, s * 0.24f, p);
-                c.drawLine(s * 0.62f, s * 0.62f, s * 0.82f, s * 0.82f, p);
+                c.drawCircle(s * 0.43f, s * 0.43f, s * 0.25f, p);
+                c.drawLine(s * 0.62f, s * 0.62f, s * 0.84f, s * 0.84f, p);
                 break;
             case "mic":  // dictation: capsule on a stand
                 r.set(s * 0.38f, s * 0.12f, s * 0.62f, s * 0.58f);
@@ -339,17 +344,16 @@ final class Glyphs {
                 path.close();
                 c.drawPath(path, p);
                 break;
-            case "controls":  // Control Center glyph: two toggles
-                p.setStrokeWidth(s * 0.07f);
-                r.set(s * 0.14f, s * 0.2f, s * 0.86f, s * 0.44f);
-                c.drawRoundRect(r, s * 0.12f, s * 0.12f, p);
-                c.drawCircle(s * 0.66f, s * 0.32f, s * 0.05f, p);
-                p.setStyle(Paint.Style.FILL);
-                r.set(s * 0.14f, s * 0.56f, s * 0.86f, s * 0.8f);
-                c.drawRoundRect(r, s * 0.12f, s * 0.12f, p);
+            case "controls":  // Control Center glyph: two toggles, outlined alike
+                r.set(s * 0.12f, s * 0.17f, s * 0.88f, s * 0.43f);
+                c.drawRoundRect(r, s * 0.13f, s * 0.13f, p);
+                r.set(s * 0.12f, s * 0.57f, s * 0.88f, s * 0.83f);
+                c.drawRoundRect(r, s * 0.13f, s * 0.13f, p);
                 Paint knob = new Paint(Paint.ANTI_ALIAS_FLAG);
-                knob.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR));
-                c.drawCircle(s * 0.34f, s * 0.68f, s * 0.07f, knob);
+                knob.setColor(color);
+                knob.setStyle(Paint.Style.FILL);
+                c.drawCircle(s * 0.68f, s * 0.3f, s * 0.05f, knob);
+                c.drawCircle(s * 0.32f, s * 0.7f, s * 0.05f, knob);
                 break;
             case "news":  // a newspaper: page with a headline and lines of text
                 r.set(s * 0.16f, s * 0.2f, s * 0.84f, s * 0.8f);
