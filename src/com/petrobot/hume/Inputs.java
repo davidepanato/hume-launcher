@@ -17,7 +17,12 @@ import java.util.List;
  * shows it. Boxes without inputs (e.g. a Mi Box) report none, and the Inputs card and button hide.
  */
 final class Inputs {
-    static final String K_CARD = "inputs_card", K_BUTTON = "inputs_button";
+    static final String K_CARD = "inputs_card", K_BUTTON = "inputs_button", K_DIRECT = "direct_id", K_DIRECT_NAME = "direct_name";
+
+    /** Icons you can give a source: key, name, and the line glyph it uses where no picture fits. */
+    static final String[] ICON_KEYS = {"auto", "wiiu", "console", "hdmi", "tv", "usb", "av", "input"};
+    static final String[] ICON_NAMES = {"Automatic", "Wii U logo", "Game console", "HDMI", "TV", "USB", "AV", "Input"};
+    static final String[] ICON_GLYPHS = {null, "gamepad", "gamepad", "hdmi", "antenna", "usb", "av", "input"};
 
     private Inputs() {
     }
@@ -42,6 +47,130 @@ final class Inputs {
 
     static boolean showButton(Context c) {
         return prefs(c).getBoolean(K_BUTTON, true);
+    }
+
+    static boolean isHdmi4(Input in) {
+        return !in.usb && in.label.replaceAll("\\s", "").equalsIgnoreCase("HDMI4");
+    }
+
+    /**
+     * The input with its own tile on Home: the one chosen in Settings (or none). Until one is
+     * chosen: HDMI 4 where the Wii U is (a TV may name it "Gioco" or similar, so failing that the
+     * only HDMI input with something plugged in). That first pick is remembered, so the tile stays
+     * when the console is switched off. Null when there is no such input.
+     */
+    static Input direct(Context c) {
+        List<Input> l = list(c);
+        String id = prefs(c).getString(K_DIRECT, null);
+        if (id != null) {
+            for (Input in : l) {
+                if (!in.id.equals(id)) continue;
+                // The first pick was named "Wii U": give it the Wii U logo unless an icon was chosen.
+                if ("Wii U".equals(prefs(c).getString(K_DIRECT_NAME, null)) && !prefs(c).contains("icon_" + in.id)) {
+                    prefs(c).edit().putString("icon_" + in.id, "wiiu").apply();
+                }
+                return in;
+            }
+            return null;
+        }
+        Input pick = null;
+        for (Input in : l) if (isHdmi4(in)) pick = in;
+        if (pick == null) {
+            int plugged = 0;
+            for (Input in : l) {
+                if (in.usb || in.type != TvInputInfo.TYPE_HDMI || in.disconnected) continue;
+                pick = in;
+                plugged++;
+            }
+            if (plugged != 1) pick = null;
+        }
+        if (pick != null) {
+            prefs(c).edit().putString(K_DIRECT, pick.id).putString(K_DIRECT_NAME, "Wii U")
+                    .putString("icon_" + pick.id, "wiiu").apply();
+        }
+        return pick;
+    }
+
+    /** The tile's name: chosen in Settings, else "Wii U" for HDMI 4, else the input's own name. */
+    static String directName(Context c, Input in) {
+        String n = prefs(c).getString(K_DIRECT_NAME, null);
+        if (n != null && !n.trim().isEmpty()) return n.trim();
+        return isHdmi4(in) ? "Wii U" : in.label;
+    }
+
+    /** The icon chosen for an input: a key from ICON_KEYS, or "url:<address>" for your own picture. */
+    static String icon(Context c, Input in) {
+        return prefs(c).getString("icon_" + in.id, "auto");
+    }
+
+    static void setIcon(Context c, Input in, String icon) {
+        prefs(c).edit().putString("icon_" + in.id, icon).apply();
+    }
+
+    static String iconName(Context c, Input in) {
+        String ic = icon(c, in);
+        if (ic.startsWith("url:")) return "Web image";
+        for (int i = 0; i < ICON_KEYS.length; i++) if (ICON_KEYS[i].equals(ic)) return ICON_NAMES[i];
+        return "Automatic";
+    }
+
+    /** Line glyph for an input, honouring the chosen icon (pictures fall back to their nearest glyph). */
+    static String glyph(Context c, Input in) {
+        String ic = icon(c, in);
+        for (int i = 0; i < ICON_KEYS.length; i++) {
+            if (ICON_KEYS[i].equals(ic) && ICON_GLYPHS[i] != null) return ICON_GLYPHS[i];
+        }
+        if (ic.startsWith("url:")) return "gamepad";
+        return glyph(in);
+    }
+
+    /** A full-colour picture for the input (the Wii U logo, or your web image once downloaded); null otherwise. */
+    static android.graphics.Bitmap picture(Context c, Input in) {
+        String ic = icon(c, in);
+        try {
+            if (ic.equals("wiiu")) {
+                try (java.io.InputStream s = c.getAssets().open("inputs/wiiu.png")) {
+                    return android.graphics.BitmapFactory.decodeStream(s);
+                }
+            }
+            if (ic.startsWith("url:")) {
+                java.io.File f = cacheFile(c, ic.substring(4));
+                return f.exists() ? android.graphics.BitmapFactory.decodeFile(f.getPath()) : null;
+            }
+        } catch (Exception ignored) {
+            // no picture
+        }
+        return null;
+    }
+
+    static java.io.File cacheFile(Context c, String url) {
+        java.io.File d = new java.io.File(c.getCacheDir(), "inputicons");
+        d.mkdirs();
+        return new java.io.File(d, Integer.toHexString(url.hashCode()) + ".img");
+    }
+
+    /** Downloads a web image for an icon (in the background); {@code done} runs on the main thread. */
+    static void fetchIcon(Context ctx, String url, Runnable done) {
+        Context c = ctx.getApplicationContext();
+        new Thread(() -> {
+            try {
+                java.net.HttpURLConnection con = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+                con.setConnectTimeout(8000);
+                con.setReadTimeout(12000);
+                con.setRequestProperty("User-Agent", "HumeLauncher");
+                java.io.File f = cacheFile(c, url);
+                try (java.io.InputStream in = con.getInputStream(); java.io.FileOutputStream out = new java.io.FileOutputStream(f)) {
+                    byte[] b = new byte[8192];
+                    int n;
+                    while ((n = in.read(b)) > 0) out.write(b, 0, n);
+                }
+                // Only keep it when it really is a picture.
+                if (android.graphics.BitmapFactory.decodeFile(f.getPath()) == null) f.delete();
+            } catch (Exception ignored) {
+                // keep the old icon
+            }
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(done);
+        }).start();
     }
 
     /** Hardware inputs in a natural order: HDMI first, then AV and the rest, tuner last. */

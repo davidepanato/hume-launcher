@@ -43,8 +43,21 @@ final class News {
 
     static final List<Source> SOURCES = new ArrayList<>();
 
+    /** ANSA (free full text, no images in its feeds): used by the News app only, not the carousel. */
+    static final Source ANSA = new Source("ansa", "ANSA",
+            "https://www.ansa.it/sito/ansait_rss.xml",
+            "https://www.ansa.it/sito/notizie/mondo/mondo_rss.xml",
+            "https://www.ansa.it/{ansa}/notizie/{ansa}_rss.xml");
+    static final String[][] ANSA_REGIONS = {{"torino", "piemonte"}, {"milano", "lombardia"}, {"roma", "lazio"},
+            {"napoli", "campania"}, {"bologna", "emiliaromagna"}, {"firenze", "toscana"}, {"genova", "liguria"},
+            {"bari", "puglia"}, {"palermo", "sicilia"}};
+
     /** Times of India city feed ids (each checked against the feed's own title). */
     static final java.util.Map<String, String> TOI_CITIES = new java.util.HashMap<>();
+
+    /** Repubblica has a city edition at {city}.repubblica.it for these cities. */
+    static final String[] REPUBBLICA_CITIES = {"torino", "milano", "roma", "napoli", "bologna", "firenze", "genova",
+            "bari", "palermo"};
 
     static {
         String[][] ids = {{"delhi", "-2128839596"}, {"mumbai", "-2128838597"}, {"bengaluru", "-2128833038"},
@@ -53,6 +66,10 @@ final class News {
                 {"jaipur", "3012544"}, {"patna", "-2128817995"}, {"noida", "8021716"}, {"gurugram", "6547154"},
                 {"nagpur", "442002"}, {"thiruvananthapuram", "878156304"}};
         for (String[] e : ids) TOI_CITIES.put(e[0], e[1]);
+        SOURCES.add(new Source("repubblica", "la Repubblica",
+                "https://www.repubblica.it/rss/cronaca/rss2.0.xml",
+                "https://www.repubblica.it/rss/esteri/rss2.0.xml",
+                "https://{rep}.repubblica.it/rss/rss2.0.xml"));
         SOURCES.add(new Source("toi", "Times of India",
                 "https://timesofindia.indiatimes.com/rssfeeds/-2128936835.cms",
                 "https://timesofindia.indiatimes.com/rssfeeds/296589292.cms",
@@ -105,6 +122,14 @@ final class News {
         }
     }
 
+    /** The Repubblica city edition for a place such as "Torino Centro (TO)", or null. */
+    private static String repubblicaCity(String place) {
+        String p = java.text.Normalizer.normalize(place.toLowerCase(Locale.ROOT), java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "");
+        for (String c : REPUBBLICA_CITIES) if (p.contains(c)) return c;
+        return null;
+    }
+
     private News() {
     }
 
@@ -117,7 +142,7 @@ final class News {
     }
 
     static Set<String> sources(Context c) {
-        Set<String> def = new HashSet<>(java.util.Arrays.asList("toi", "ht", "ie", "indiatoday", "news18"));
+        Set<String> def = new HashSet<>(java.util.Arrays.asList("repubblica"));
         return new HashSet<>(Suggestions.prefs(c).getStringSet(K_SOURCES, def));
     }
 
@@ -128,25 +153,49 @@ final class News {
 
     /** Latest stories: India, local and world mixed together, alternating between newsrooms. Blocking. */
     static List<Suggestions.Item> fetch(Context c, int max) {
+        return fetch(c, max, sources(c), true, 8);
+    }
+
+    /** The News app's stories: la Repubblica and ANSA, with or without a picture, more per feed. Blocking. */
+    static List<Suggestions.Item> fetchForApp(Context c, int max) {
+        return fetch(c, max, new HashSet<>(java.util.Arrays.asList("repubblica", "ansa")), false, 20);
+    }
+
+    private static List<Suggestions.Item> fetch(Context c, int max, Set<String> chosen, boolean needImage, int perFeed) {
         List<List<Suggestions.Item>> lists = new ArrayList<>();
-        Set<String> chosen = sources(c);
         String city = city(c);
+        List<Source> all = new ArrayList<>(SOURCES);
+        all.add(ANSA);
         for (String sec : SECTIONS) {
             if (sec.equals(LOCAL) && city.isEmpty()) continue;
-            for (Source s : SOURCES) {
+            for (Source s : all) {
                 if (!chosen.contains(s.id)) continue;
                 String url = sec.equals(INDIA) ? s.india : sec.equals(WORLD) ? s.world : s.local;
                 if (url == null) continue;
+                if (url.contains("{rep}")) {
+                    String rc = repubblicaCity(city);
+                    if (rc == null) continue;
+                    url = url.replace("{rep}", rc);
+                }
+                if (url.contains("{ansa}")) {
+                    String region = null;
+                    String low = city.toLowerCase(Locale.ROOT);
+                    for (String[] r : ANSA_REGIONS) if (low.contains(r[0])) region = r[1];
+                    if (region == null) continue;
+                    url = url.replace("{ansa}", region);
+                }
                 if (url.contains("{toi}")) {
                     String id = TOI_CITIES.get(slug(city, false));
                     if (id == null) continue;
                     url = url.replace("{toi}", id);
                 }
                 url = url.replace("{ie}", slug(city, true)).replace("{ht}", slug(city, false));
-                String label = sec.equals(LOCAL) ? city : sec.equals(WORLD) ? "World" : "India";
+                boolean it = s.id.equals("repubblica") || s.id.equals("ansa");
+                String label = sec.equals(LOCAL) ? (it ? repubblicaCity(city) == null ? city : cap(repubblicaCity(city)) : city)
+                        : sec.equals(WORLD) ? (it ? "Mondo" : "World") : (it ? "Italia" : "India");
                 try {
                     long maxAge = (sec.equals(LOCAL) ? 7 : 2) * 86400000L;  // city news moves slower
-                    List<Suggestions.Item> l = read(url, label + "  \u00b7  " + s.name, maxAge);
+                    List<Suggestions.Item> l = read(url, label + "  \u00b7  " + s.name, maxAge, needImage, perFeed);
                     if (!l.isEmpty()) lists.add(l);
                 } catch (Exception e) {
                     // skip a feed that can't be reached (or a city without its own feed)
@@ -170,7 +219,8 @@ final class News {
         return out;
     }
 
-    private static List<Suggestions.Item> read(String url, String label, long maxAge) throws Exception {
+    private static List<Suggestions.Item> read(String url, String label, long maxAge, boolean needImage, int perFeed)
+            throws Exception {
         HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
         con.setConnectTimeout(8000);
         con.setReadTimeout(12000);
@@ -217,7 +267,7 @@ final class News {
                             if (m.find()) cur.backdrop = bigger(m.group(1).replace("&amp;", "&"));
                         }
                         boolean fresh = cur.published == 0 || System.currentTimeMillis() - cur.published < maxAge;
-                        if (!cur.title.isEmpty() && !cur.backdrop.isEmpty() && fresh) out.add(cur);
+                        if (!cur.title.isEmpty() && (!needImage || !cur.backdrop.isEmpty()) && fresh) out.add(cur);
                         cur = null;
                     }
                     tag = null;
@@ -227,7 +277,7 @@ final class News {
             con.disconnect();
         }
         out.sort((a, b) -> Long.compare(b.published, a.published));  // newest first
-        return out.size() > 8 ? new ArrayList<>(out.subList(0, 8)) : out;
+        return out.size() > perFeed ? new ArrayList<>(out.subList(0, perFeed)) : out;
     }
 
     /** Ask for a larger rendition where the newsroom's image URLs allow it. */
@@ -235,6 +285,10 @@ final class News {
         java.util.regex.Matcher toi = java.util.regex.Pattern.compile("toiimg\\.com/photo/msid-(\\d+)").matcher(u);
         if (toi.find()) return "https://static.toiimg.com/thumb/msid-" + toi.group(1) + ",width-1280,height-720,resizemode-4/photo.jpg";
         return u.replaceAll("/LANDSCAPE_\\d+/", "/LANDSCAPE_1200/");
+    }
+
+    private static String cap(String s) {
+        return s.substring(0, 1).toUpperCase(Locale.ROOT) + s.substring(1);
     }
 
     /** Strip tags and entities; keep one short paragraph. */
@@ -259,13 +313,13 @@ final class News {
         return 0;
     }
 
-    /** "Just now", "5 min ago", "3 h ago", "Yesterday" \u2014 worked out when shown, so it never goes stale. */
+    /** "Adesso", "5 min fa", "3 h fa", "Ieri" \u2014 worked out when shown, so it never goes stale. */
     static String age(long published) {
         if (published <= 0) return "";
         long min = (System.currentTimeMillis() - published) / 60000;
-        if (min < 1) return "Just now";
-        if (min < 60) return min + " min ago";
-        if (min < 24 * 60) return (min / 60) + " h ago";
-        return min < 48 * 60 ? "Yesterday" : (min / 1440) + " days ago";
+        if (min < 1) return "Adesso";
+        if (min < 60) return min + " min fa";
+        if (min < 24 * 60) return (min / 60) + " h fa";
+        return min < 48 * 60 ? "Ieri" : (min / 1440) + " giorni fa";
     }
 }

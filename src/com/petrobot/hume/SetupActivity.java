@@ -400,13 +400,13 @@ public class SetupActivity extends Activity {
         backdrop.animate().alpha(0f).setDuration(Motion.d(300)).start();
         View top = new View(this);
         page.addView(top, new LinearLayout.LayoutParams(1, 0, 1f));
-        TextView hi = title("Welcome");
+        TextView hi = title("Benvenuto");
         Ui.textSize(hi, 64);
         hi.setAlpha(0f);
         hi.setTranslationY(u(12));
         hi.animate().alpha(1f).translationY(0).setDuration(Motion.d(700)).start();
-        // "Welcome" in Indian and world languages, fading from one to the next.
-        String[] words = {"Welcome", "स्वागत है", "স্বাগতম", "வரவேற்கிறோம்", "స్వాగతం", "स्वागत आहे", "સ્વાગત છે", "ಸ್ವಾಗತ", "സ്വാഗതം", "ਜੀ ਆਇਆਂ ਨੂੰ", "Bienvenue", "Bienvenido", "Willkommen", "ようこそ", "Benvenuto", "Bem-vindo", "欢迎"};
+        // "Welcome" in Italian first, then European and world languages, fading from one to the next.
+        String[] words = {"Benvenuto", "Welcome", "Bienvenue", "Bienvenido", "Willkommen", "Bem-vindo", "Welkom", "V\u00e4lkommen", "Witamy", "\u039a\u03b1\u03bb\u03ce\u03c2 \u03ae\u03c1\u03b8\u03b1\u03c4\u03b5", "\u3088\u3046\u3053\u305d", "\u6b22\u8fce"};
         int[] k = {0};
         Runnable[] cycle = new Runnable[1];
         cycle[0] = () -> {
@@ -424,7 +424,7 @@ public class SetupActivity extends Activity {
         View mid = new View(this);
         page.addView(mid, new LinearLayout.LayoutParams(1, 0, 1f));
         TextView by = new TextView(this);
-        by.setText("by Petrobot");
+        by.setText("by Dave");
         by.setTextColor(0x80FFFFFF);
         by.setTypeface(Ui.font(this, "regular"));
         Ui.textSize(by, 13);
@@ -550,7 +550,7 @@ public class SetupActivity extends Activity {
             r[0].set(recs[0]);
         });
         Row[] n = new Row[1];
-        n[0] = row(l, "News", "India, your city and the world, from Indian newsrooms", SWITCH, news[0], () -> {
+        n[0] = row(l, "News", "Italy, your city and the world, from la Repubblica", SWITCH, news[0], () -> {
             news[0] = !news[0];
             Suggestions.setShelf(this, recs[0], news[0]);
             n[0].set(news[0]);

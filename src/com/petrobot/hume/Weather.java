@@ -72,7 +72,7 @@ final class Weather {
     }
 
     static String sourceName(String s) {
-        return s.equals(SRC_MET) ? "MET Norway" : s.equals(SRC_WTTR) ? "wttr.in" : "Open-Meteo";
+        return s.equals(SRC_MET) ? "MET Norway" : s.equals(SRC_WTTR) ? "wttr.in" : s.equals("ha") ? "Home Assistant" : "Open-Meteo";
     }
 
     /** Minutes between updates (15 by default). */
@@ -218,7 +218,7 @@ final class Weather {
     }
 
     private static String key(Context c) {
-        return units(c) + "|" + source(c) + (manual(c) ? "|" + prefs(c).getFloat(K_LAT, 0) + "," + prefs(c).getFloat(K_LON, 0) : "|auto");
+        return units(c) + "|" + source(c) + (HomeAssistant.useForWeather(c) ? "|ha:" + HomeAssistant.weatherEntity(c) : "") + (manual(c) ? "|" + prefs(c).getFloat(K_LAT, 0) + "," + prefs(c).getFloat(K_LON, 0) : "|auto");
     }
 
     private static boolean busy;
@@ -232,6 +232,22 @@ final class Weather {
         new Thread(() -> {
             try {
                 SharedPreferences p = prefs(c);
+                // Home Assistant's own weather entity first, when connected; the free sources are the fallback.
+                if (HomeAssistant.useForWeather(c)) {
+                    try {
+                        Data h = HomeAssistant.fetchWeather(c, units(c).equals("f"));
+                        h.fetchedAt = System.currentTimeMillis();
+                        p.edit().putString(K_CACHE, h.toJson().toString()).putString(K_PLACE, h.place)
+                                .putLong(K_CACHE_AT, h.fetchedAt).putString(K_CACHE_KEY, key(c)).apply();
+                        main.post(() -> {
+                            busy = false;
+                            if (done != null) done.run();
+                        });
+                        return;
+                    } catch (Exception ignored) {
+                        // fall back to the free sources
+                    }
+                }
                 double lat, lon;
                 String place;
                 if (manual(c)) {

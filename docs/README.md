@@ -30,7 +30,7 @@ Interface Guidelines, then tuned to run at 60 fps on a low-end Mali-450 GPU.
 |---|---|
 | Dock & grid | Frosted Liquid Glass dock; 5:3 cards, 6 per row; 1.2× focus lift; tvOS zoom-to-open |
 | Carousel | Continue Watching first, then Indian news and rotating recommendations (JustWatch, TMDB or Stremio); full screen when idle |
-| Search | Apps, settings and inputs instantly; movies and shows on every service in India with Open / Get; Hindi keyboard, dictation; hold Back to open |
+| Search | Apps, settings and inputs instantly; movies and shows on every service in Italy with Open / Get; accented keyboard, dictation; hold Back to open |
 | Profiles | Up to 3, unique emoji avatars; separate layout, background and history; picker on wake |
 | Control Center | Sleep, Wi-Fi, Do Not Disturb, audio, sleep timer, Bluetooth, accessibility, settings, search |
 | Presentation | Browser upload of images/videos/webpages, looping full-screen playback, start on boot |

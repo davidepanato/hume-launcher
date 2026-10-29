@@ -43,6 +43,30 @@ public class SettingsActivity extends Activity {
             Suggestions.changed(this);
             Toast.makeText(this, "TMDB connected", Toast.LENGTH_SHORT).show();
         }
+        // adb: --es ha_url http://192.168.1.5:8123 --es ha_token <long-lived token>
+        String haUrl = getIntent().getStringExtra("ha_url"), haToken = getIntent().getStringExtra("ha_token");
+        if (haUrl != null && !haUrl.trim().isEmpty()) HomeAssistant.setUrl(this, haUrl);
+        if (haToken != null && !haToken.trim().isEmpty()) HomeAssistant.setToken(this, haToken);
+        // adb: --es ha_weather weather.home --es ha_items script.movie_mode,light.living (names come from Home Assistant)
+        String haWeather = getIntent().getStringExtra("ha_weather"), haItems = getIntent().getStringExtra("ha_items");
+        if (haWeather != null && !haWeather.trim().isEmpty()) {
+            HomeAssistant.prefs(this).edit().putString(HomeAssistant.K_WEATHER_ENTITY, haWeather.trim()).apply();
+            Weather.changed(this);
+        }
+        if (haItems != null && !haItems.trim().isEmpty() && HomeAssistant.configured(this)) {
+            List<String> ids = java.util.Arrays.asList(haItems.trim().split("\\s*,\\s*"));
+            new Thread(() -> {
+                try {
+                    java.util.Map<String, String> names = new java.util.HashMap<>();
+                    for (HomeAssistant.Entity e : HomeAssistant.entities(this)) names.put(e.id, e.name);
+                    List<HomeAssistant.Item> items = new ArrayList<>();
+                    for (String id : ids) if (names.containsKey(id)) items.add(new HomeAssistant.Item(id, names.get(id)));
+                    HomeAssistant.setItems(this, items.size() > HomeAssistant.MAX_ITEMS ? items.subList(0, HomeAssistant.MAX_ITEMS) : items);
+                } catch (Exception ignored) {
+                    // set them in Settings instead
+                }
+            }).start();
+        }
         build();
         String pg = getIntent().getStringExtra("page");  // adb: --es page "Top Shelf"
         if (pg != null) show(pg);
@@ -50,7 +74,7 @@ public class SettingsActivity extends Activity {
 
     // tvOS-style pages: the main list opens a page per section; Back returns to the main list.
     static final String ROOT = "root", PROFILES = "Profiles", SHELF = "Top Shelf", PRESENT = "Presentation",
-            INPUTS = "Inputs", WEATHER = "Weather", WATCHING = "Continue Watching", HOME = "Home",
+            INPUTS = "Inputs", WEATHER = "Weather", HASS = "Home Assistant", WATCHING = "Continue Watching", HOME = "Home",
             PERMS = "Permissions", ABOUT = "About";
 
     FrameLayout leftPane;
@@ -100,6 +124,7 @@ public class SettingsActivity extends Activity {
             case PRESENT: pagePresentation(); break;
             case INPUTS: pageInputs(); break;
             case WEATHER: pageWeather(); break;
+            case HASS: pageHomeAssistant(); break;
             case WATCHING: pageShelf(); break;  // older deep links: Continue Watching now lives in Top Shelf
             case HOME: pageHome(); break;
             case PERMS: pagePermissions(); break;
@@ -145,7 +170,7 @@ public class SettingsActivity extends Activity {
         else refreshAll();
     }
 
-    /** Left side: the page's icon (Petrobot on the main list), its title, and the brand line. */
+    /** Left side: the page's icon (Hume on the main list), its title, and the brand line. */
     void buildLeft(String p) {
         leftPane.removeAllViews();
         LinearLayout left = new LinearLayout(this);
@@ -153,15 +178,18 @@ public class SettingsActivity extends Activity {
         left.setGravity(Gravity.CENTER_HORIZONTAL);
         android.view.View icon;
         if (p.equals(ROOT)) {
-            // Petrobot's mark on a white 5:3 tile, the same shape and radius as the Home cards.
+            // A "D" monogram on a white 5:3 tile, the same shape and radius as the Home cards.
             FrameLayout tile = new FrameLayout(this);
             GradientDrawable plate = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                     new int[]{0xFFFFFFFF, 0xFFE9EAEE});
             plate.setCornerRadius(Ui.px(this, 12));
             tile.setBackground(plate);
-            ImageView mark = new ImageView(this);
-            mark.setImageResource(R.drawable.petrobot_mark);
-            mark.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            TextView mark = new TextView(this);
+            mark.setText("D");
+            mark.setTextColor(0xFF111114);
+            mark.setTypeface(Ui.font(this, "semibold"));
+            mark.setGravity(Gravity.CENTER);
+            Ui.textSize(mark, 40);
             tile.addView(mark, new FrameLayout.LayoutParams(Ui.px(this, 58), Ui.px(this, 58), Gravity.CENTER));
             icon = tile;
         } else {
@@ -189,7 +217,7 @@ public class SettingsActivity extends Activity {
 
         if (p.equals(ROOT)) {
             TextView by = new TextView(this);
-            by.setText("Hume Launcher by Petrobot");
+            by.setText("Hume Launcher by Dave");
             by.setTextColor(0x8CFFFFFF);
             by.setTypeface(Ui.font(this, "regular"));
             Ui.textSize(by, 13);
@@ -212,6 +240,7 @@ public class SettingsActivity extends Activity {
             case SHELF: grad = new int[]{0xFF64D2FF, 0xFF0A84FF}; glyph = "shelf"; break;
             case INPUTS: grad = new int[]{0xFF6E6E73, 0xFF2C2C2E}; glyph = "input"; break;
             case WEATHER: grad = new int[]{0xFF5AC8FA, 0xFF2D6BD8}; glyph = null; break;
+            case HASS: grad = new int[]{0xFF41BDF5, 0xFF1C8FD1}; glyph = "house"; break;
             case WATCHING: grad = new int[]{0xFFFF6482, 0xFFD6305A}; glyph = "present"; break;
             case HOME: grad = new int[]{0xFF30D158, 0xFF1E9E48}; glyph = "house"; break;
             case PERMS: grad = new int[]{0xFF8E8E93, 0xFF48484A}; glyph = "shield"; break;
@@ -246,6 +275,8 @@ public class SettingsActivity extends Activity {
         nav(PRESENT, () -> com.petrobot.hume.present.Presenter.enabled(this) ? "On" : "Off");
         if (!Inputs.list(this).isEmpty()) nav(INPUTS, () -> Inputs.showCard(this) ? "On" : "Off");
         nav(WEATHER, () -> !Weather.enabled(this) ? "Off" : Weather.place(this).isEmpty() ? "On" : Weather.place(this));
+        nav(HASS, () -> !HomeAssistant.configured(this) ? "Not connected"
+                : HomeAssistant.items(this).size() + " on panel");
         nav(HOME, () -> {
             String k = Profiles.homePrefs(this).getString("wallpaper", "aurora");
             int i = java.util.Arrays.asList(MainActivity.WALL_KEYS).indexOf(k);
@@ -474,12 +505,92 @@ public class SettingsActivity extends Activity {
     void pageInputs() {
         row("Inputs card on Home", () -> Inputs.showCard(this) ? "On" : "Off", () ->
                 Inputs.prefs(this).edit().putBoolean(Inputs.K_CARD, !Inputs.showCard(this)).apply());
+        section("Quick tile on Home");
+        row("Icon", () -> {
+            Inputs.Input d = Inputs.direct(this);
+            return d == null ? "" : Inputs.iconName(this, d);
+        }, () -> {
+            Inputs.Input d = Inputs.direct(this);
+            if (d != null) chooseInputIcon(d);
+        });
+        row("Input", () -> {
+            Inputs.Input d = Inputs.direct(this);
+            return d == null ? "None" : d.label;
+        }, this::chooseDirectInput);
+        row("Name", () -> {
+            Inputs.Input d = Inputs.direct(this);
+            return d == null ? "" : Inputs.directName(this, d);
+        }, () -> {
+            Inputs.Input d = Inputs.direct(this);
+            if (d == null) return;
+            askText("Tile name", "e.g. Wii U", Inputs.directName(this, d), false, t -> {
+                Inputs.prefs(this).edit().putString(Inputs.K_DIRECT_NAME, t.trim()).apply();
+                refreshAll();
+            });
+        });
+        section("Icons");
+        for (Inputs.Input in : Inputs.list(this)) {
+            if (in.usb) continue;
+            row(in.label, () -> Inputs.iconName(this, in), () -> chooseInputIcon(in));
+        }
         section("This TV");
         for (Inputs.Input in : Inputs.list(this)) {
             row(in.label, () -> in.disconnected ? "Not connected" : "", () -> {
                 if (!Inputs.open(this, in)) Toast.makeText(this, "Can't switch to " + in.label, Toast.LENGTH_SHORT).show();
             });
         }
+    }
+
+    /** The icon of a source: a ready one (the Wii U logo, a console, HDMI...) or a picture from a web address. */
+    void chooseInputIcon(Inputs.Input in) {
+        String[] names = new String[Inputs.ICON_NAMES.length + 1];
+        System.arraycopy(Inputs.ICON_NAMES, 0, names, 0, Inputs.ICON_NAMES.length);
+        names[names.length - 1] = "Web image\u2026";
+        String cur = Inputs.icon(this, in);
+        int sel = names.length - 1;
+        if (!cur.startsWith("url:")) for (int i = 0; i < Inputs.ICON_KEYS.length; i++) if (Inputs.ICON_KEYS[i].equals(cur)) sel = i;
+        dialog("Icon for " + in.label).setSingleChoiceItems(names, sel, (d, w) -> {
+            d.dismiss();
+            if (w < Inputs.ICON_KEYS.length) {
+                Inputs.setIcon(this, in, Inputs.ICON_KEYS[w]);
+                refreshAll();
+                return;
+            }
+            askText("Image address (PNG or JPG)", "https://\u2026", cur.startsWith("url:") ? cur.substring(4) : "", false, t -> {
+                String u = t.trim();
+                if (u.isEmpty()) return;
+                Toast.makeText(this, "Downloading\u2026", Toast.LENGTH_SHORT).show();
+                Inputs.fetchIcon(this, u, () -> {
+                    if (Inputs.cacheFile(this, u).exists()) {
+                        Inputs.setIcon(this, in, "url:" + u);
+                        Toast.makeText(this, "Icon set", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(this, "That address isn't a picture", Toast.LENGTH_LONG).show();
+                    }
+                    refreshAll();
+                });
+            });
+        }).show();
+    }
+
+    /** Which input gets its own tile on Home (HDMI 4 by default), or none. */
+    void chooseDirectInput() {
+        List<Inputs.Input> all = new ArrayList<>();
+        for (Inputs.Input in : Inputs.list(this)) if (!in.usb) all.add(in);
+        String[] names = new String[all.size() + 1];
+        names[0] = "None";
+        Inputs.Input cur = Inputs.direct(this);
+        int sel = 0;
+        for (int i = 0; i < all.size(); i++) {
+            names[i + 1] = all.get(i).label;
+            if (cur != null && cur.id.equals(all.get(i).id)) sel = i + 1;
+        }
+        dialog("Quick tile input").setSingleChoiceItems(names, sel, (d, w) -> {
+            Inputs.prefs(this).edit().putString(Inputs.K_DIRECT, w == 0 ? "" : all.get(w - 1).id)
+                    .remove(Inputs.K_DIRECT_NAME).apply();
+            refreshAll();
+            d.dismiss();
+        }).show();
     }
 
     void pageWeather() {
@@ -531,6 +642,155 @@ public class SettingsActivity extends Activity {
                 d.dismiss();
             }).show();
         });
+    }
+
+    void pageHomeAssistant() {
+        row("Server", () -> HomeAssistant.url(this).isEmpty() ? "Not set" : HomeAssistant.url(this), () ->
+                askText("Home Assistant address", "http://homeassistant.local:8123", HomeAssistant.url(this), false, t -> {
+                    HomeAssistant.setUrl(this, t);
+                    refreshAll();
+                }));
+        row("Access token", () -> HomeAssistant.prefs(this).getString(HomeAssistant.K_TOKEN, "").isEmpty() ? "Not set" : "Saved", () ->
+                askText("Long-lived access token", "Profile \u2192 Security \u2192 Long-lived access tokens", "", true, t -> {
+                    HomeAssistant.setToken(this, t);
+                    refreshAll();
+                }));
+        if (!HomeAssistant.configured(this)) return;
+        row("Test connection", () -> "", () -> {
+            Toast.makeText(this, "Connecting\u2026", Toast.LENGTH_SHORT).show();
+            new Thread(() -> {
+                String r = HomeAssistant.test(this);
+                runOnUiThread(() -> Toast.makeText(this, r, Toast.LENGTH_LONG).show());
+            }).start();
+        });
+        section("Weather");
+        row("Use for weather", () -> HomeAssistant.prefs(this).getBoolean(HomeAssistant.K_WEATHER, true) ? "On" : "Off", () -> {
+            HomeAssistant.prefs(this).edit().putBoolean(HomeAssistant.K_WEATHER,
+                    !HomeAssistant.prefs(this).getBoolean(HomeAssistant.K_WEATHER, true)).apply();
+            Weather.changed(this);
+            refreshAll();
+        });
+        row("Weather entity", () -> HomeAssistant.weatherEntity(this).isEmpty() ? "Choose\u2026" : HomeAssistant.weatherEntity(this),
+                this::chooseHaWeather);
+        section("Home panel (Control Center \u2192 house)");
+        row("Scenes, scripts & buttons", () -> countHa("actions"), () -> chooseHaItems("actions", "Scenes, scripts & buttons"));
+        row("Lights & switches", () -> countHa("devices"), () -> chooseHaItems("devices", "Lights & switches"));
+        row("Status (sensors)", () -> countHa("status"), () -> chooseHaItems("status", "Status tiles"));
+        section("Disconnect");
+        row("Forget Home Assistant", () -> "", () ->
+                dialog("Forget Home Assistant?").setMessage("Removes the address, token and panel. Weather goes back to the free sources.")
+                        .setPositiveButton("Forget", (d, w) -> {
+                            HomeAssistant.disconnect(this);
+                            show(HASS);
+                        }).setNegativeButton("Cancel", null).show());
+    }
+
+    /** Number of panel tiles in a group, as a row value. */
+    String countHa(String group) {
+        int n = 0;
+        for (HomeAssistant.Item it : HomeAssistant.items(this)) if (haGroup(it.domain()).equals(group)) n++;
+        return n == 0 ? "None" : n + " chosen";
+    }
+
+    static String haGroup(String domain) {
+        switch (domain) {
+            case "scene": case "script": case "button": case "input_button": return "actions";
+            case "light": case "switch": case "input_boolean": case "fan": case "cover": return "devices";
+            default: return "status";
+        }
+    }
+
+    interface TextDone {
+        void got(String t);
+    }
+
+    /** A one-line text box (dictate or use the TV keyboard); the token is hidden as it is typed. */
+    void askText(String title, String hint, String initial, boolean secret, TextDone done) {
+        android.widget.EditText in = new android.widget.EditText(this);
+        in.setSingleLine(true);
+        in.setHint(hint);
+        in.setText(initial);
+        in.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI
+                | (secret ? android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD : 0));
+        int pad = Ui.px(this, 14);
+        FrameLayout box = new FrameLayout(this);
+        box.setPadding(pad, pad / 2, pad, 0);
+        box.addView(in);
+        dialog(title).setView(box)
+                .setPositiveButton("Save", (d, w) -> done.got(in.getText().toString()))
+                .setNegativeButton("Cancel", null).show();
+        in.requestFocus();
+    }
+
+    void chooseHaWeather() {
+        Toast.makeText(this, "Loading from Home Assistant\u2026", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            List<HomeAssistant.Entity> all;
+            try {
+                all = HomeAssistant.entities(this);
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(this, "Can't connect: " + e.getMessage(), Toast.LENGTH_LONG).show());
+                return;
+            }
+            List<HomeAssistant.Entity> w = new ArrayList<>();
+            for (HomeAssistant.Entity e : all) if (e.group.equals("weather")) w.add(e);
+            runOnUiThread(() -> {
+                if (w.isEmpty()) {
+                    Toast.makeText(this, "No weather entity in Home Assistant", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                String[] names = new String[w.size()];
+                int sel = 0;
+                for (int i = 0; i < names.length; i++) {
+                    names[i] = w.get(i).name + "  (" + w.get(i).id + ")";
+                    if (w.get(i).id.equals(HomeAssistant.weatherEntity(this))) sel = i;
+                }
+                dialog("Weather entity").setSingleChoiceItems(names, sel, (d, i) -> {
+                    HomeAssistant.prefs(this).edit().putString(HomeAssistant.K_WEATHER_ENTITY, w.get(i).id).apply();
+                    Weather.changed(this);
+                    refreshAll();
+                    d.dismiss();
+                }).show();
+            });
+        }).start();
+    }
+
+    /** Tick the entities of one group for the Home panel; the other groups' choices are kept. */
+    void chooseHaItems(String group, String title) {
+        Toast.makeText(this, "Loading from Home Assistant\u2026", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            List<HomeAssistant.Entity> all;
+            try {
+                all = HomeAssistant.entities(this);
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(this, "Can't connect: " + e.getMessage(), Toast.LENGTH_LONG).show());
+                return;
+            }
+            List<HomeAssistant.Entity> g = new ArrayList<>();
+            for (HomeAssistant.Entity e : all) if (e.group.equals(group)) g.add(e);
+            runOnUiThread(() -> {
+                List<HomeAssistant.Item> cur = HomeAssistant.items(this);
+                String[] names = new String[g.size()];
+                boolean[] on = new boolean[g.size()];
+                for (int i = 0; i < names.length; i++) {
+                    names[i] = g.get(i).name;
+                    for (HomeAssistant.Item it : cur) if (it.id.equals(g.get(i).id)) on[i] = true;
+                }
+                dialog(title).setMultiChoiceItems(names, on, (d, i, checked) -> on[i] = checked)
+                        .setPositiveButton("Done", (d, w) -> {
+                            List<HomeAssistant.Item> next = new ArrayList<>();
+                            for (HomeAssistant.Item it : cur) if (!haGroup(it.domain()).equals(group)) next.add(it);
+                            for (int i = 0; i < on.length; i++) if (on[i]) next.add(new HomeAssistant.Item(g.get(i).id, g.get(i).name));
+                            if (next.size() > HomeAssistant.MAX_ITEMS) {
+                                Toast.makeText(this, "The panel holds " + HomeAssistant.MAX_ITEMS + " tiles; extras were dropped.",
+                                        Toast.LENGTH_LONG).show();
+                                next = next.subList(0, HomeAssistant.MAX_ITEMS);
+                            }
+                            HomeAssistant.setItems(this, next);
+                            refreshAll();
+                        }).setNegativeButton("Cancel", null).show();
+            });
+        }).start();
     }
 
     void pageHome() {
@@ -692,9 +952,9 @@ public class SettingsActivity extends Activity {
 
     void pageAbout() {
         row("Hume Launcher", () -> "Version " + version(), () -> { });
-        row("Made by", () -> "Petrobot", () -> { });
+        row("Made by", () -> "Dave", () -> { });
         row("Weather", () -> Weather.sourceName(Weather.source(this)), () -> { });
-        row("News", () -> News.sources(this).size() + " Indian newsrooms", () -> { });
+        row("News", () -> News.sources(this).size() + " newsrooms", () -> { });
     }
 
     boolean screensaverAllowed() {

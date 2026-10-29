@@ -1,6 +1,6 @@
 # Hume Launcher
 
-A tvOS 26–style home screen for Android TV, by Petrobot. It replaces the stock launcher with one
+A tvOS 26–style home screen for Android TV, by Dave (a fork of Petrobot's Hume Launcher). It replaces the stock launcher with one
 modelled on Apple TV — glass dock, full-screen carousel, Control Center, profiles — and is built to
 stay smooth on low-end TV boxes like the Xiaomi Mi Box. Plain Java, no Gradle, no third-party
 runtime libraries; the APK is about 1 MB.
@@ -17,7 +17,7 @@ runtime libraries; the APK is about 1 MB.
   screen when Home is idle.
 - **Status row**: internet indicator, time, Refresh, Search, Control Center, profile avatar.
 - **Search**: apps, settings and inputs instantly, plus movies and shows on every streaming service
-  in India (Indian titles included, typed in English or Hindi, or spoken) with **Open** in the app
+  in Italy (typed or spoken) with **Open** in the app
   you have or **Get** for the one you don't.
 - **Weather**: a glass pill with a 5-day forecast panel (Open-Meteo, MET Norway or wttr.in — no keys).
 - **Control Center**: Power Off, Memory/Clean, Wi-Fi, Do Not Disturb, audio, sleep timer, inputs,

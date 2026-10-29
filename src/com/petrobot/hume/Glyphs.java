@@ -351,6 +351,123 @@ final class Glyphs {
                 knob.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR));
                 c.drawCircle(s * 0.34f, s * 0.68f, s * 0.07f, knob);
                 break;
+            case "news":  // a newspaper: page with a headline and lines of text
+                r.set(s * 0.16f, s * 0.2f, s * 0.84f, s * 0.8f);
+                c.drawRoundRect(r, s * 0.08f, s * 0.08f, p);
+                c.drawLine(s * 0.3f, s * 0.38f, s * 0.7f, s * 0.38f, p);
+                c.drawLine(s * 0.3f, s * 0.52f, s * 0.7f, s * 0.52f, p);
+                c.drawLine(s * 0.3f, s * 0.66f, s * 0.55f, s * 0.66f, p);
+                break;
+            case "view_grid":  // News view: four tiles
+                for (int i = 0; i < 4; i++) {
+                    float x = i % 2 == 0 ? 0.16f : 0.54f, y = i < 2 ? 0.16f : 0.54f;
+                    r.set(s * x, s * y, s * (x + 0.3f), s * (y + 0.3f));
+                    c.drawRoundRect(r, s * 0.06f, s * 0.06f, p);
+                }
+                break;
+            case "view_list":  // News view: three rows, each a thumbnail and a line
+                for (int i = 0; i < 3; i++) {
+                    float y = 0.24f + i * 0.26f;
+                    r.set(s * 0.14f, s * (y - 0.08f), s * 0.34f, s * (y + 0.08f));
+                    c.drawRoundRect(r, s * 0.04f, s * 0.04f, p);
+                    c.drawLine(s * 0.46f, s * y, s * 0.86f, s * y, p);
+                }
+                break;
+            case "view_full":  // News view: a full-screen picture with its caption lines
+                r.set(s * 0.12f, s * 0.2f, s * 0.88f, s * 0.8f);
+                c.drawRoundRect(r, s * 0.08f, s * 0.08f, p);
+                c.drawLine(s * 0.26f, s * 0.6f, s * 0.62f, s * 0.6f, p);
+                c.drawLine(s * 0.26f, s * 0.48f, s * 0.46f, s * 0.48f, p);
+                break;
+            case "media_play":  // filled triangle
+                p.setStyle(Paint.Style.FILL);
+                path.moveTo(s * 0.3f, s * 0.2f);
+                path.lineTo(s * 0.82f, m);
+                path.lineTo(s * 0.3f, s * 0.8f);
+                path.close();
+                c.drawPath(path, p);
+                break;
+            case "media_pause":  // two bars
+                p.setStyle(Paint.Style.FILL);
+                r.set(s * 0.26f, s * 0.2f, s * 0.42f, s * 0.8f);
+                c.drawRoundRect(r, s * 0.04f, s * 0.04f, p);
+                r.set(s * 0.58f, s * 0.2f, s * 0.74f, s * 0.8f);
+                c.drawRoundRect(r, s * 0.04f, s * 0.04f, p);
+                break;
+            case "media_next":  // triangle and bar
+                p.setStyle(Paint.Style.FILL);
+                path.moveTo(s * 0.2f, s * 0.24f);
+                path.lineTo(s * 0.64f, m);
+                path.lineTo(s * 0.2f, s * 0.76f);
+                path.close();
+                c.drawPath(path, p);
+                r.set(s * 0.7f, s * 0.24f, s * 0.82f, s * 0.76f);
+                c.drawRoundRect(r, s * 0.04f, s * 0.04f, p);
+                break;
+            case "media_prev":  // bar and triangle
+                p.setStyle(Paint.Style.FILL);
+                path.moveTo(s * 0.8f, s * 0.24f);
+                path.lineTo(s * 0.36f, m);
+                path.lineTo(s * 0.8f, s * 0.76f);
+                path.close();
+                c.drawPath(path, p);
+                r.set(s * 0.18f, s * 0.24f, s * 0.3f, s * 0.76f);
+                c.drawRoundRect(r, s * 0.04f, s * 0.04f, p);
+                break;
+            case "vol_minus":
+            case "vol_plus":  // speaker with a minus or a plus
+                p.setStyle(Paint.Style.FILL);
+                path.moveTo(s * 0.1f, s * 0.4f);
+                path.lineTo(s * 0.26f, s * 0.4f);
+                path.lineTo(s * 0.46f, s * 0.22f);
+                path.lineTo(s * 0.46f, s * 0.78f);
+                path.lineTo(s * 0.26f, s * 0.6f);
+                path.lineTo(s * 0.1f, s * 0.6f);
+                path.close();
+                c.drawPath(path, p);
+                p.setStyle(Paint.Style.STROKE);
+                c.drawLine(s * 0.62f, m, s * 0.9f, m, p);
+                if (name.equals("vol_plus")) c.drawLine(s * 0.76f, s * 0.36f, s * 0.76f, s * 0.64f, p);
+                break;
+            case "music":  // two joined notes
+                p.setStyle(Paint.Style.FILL);
+                c.drawOval(s * 0.16f, s * 0.64f, s * 0.42f, s * 0.84f, p);
+                c.drawOval(s * 0.54f, s * 0.56f, s * 0.8f, s * 0.76f, p);
+                p.setStyle(Paint.Style.STROKE);
+                c.drawLine(s * 0.38f, s * 0.74f, s * 0.38f, s * 0.26f, p);
+                c.drawLine(s * 0.76f, s * 0.66f, s * 0.76f, s * 0.18f, p);
+                c.drawLine(s * 0.38f, s * 0.26f, s * 0.76f, s * 0.18f, p);
+                break;
+            case "view_big":  // large covers: two tall tiles side by side
+                r.set(s * 0.12f, s * 0.2f, s * 0.46f, s * 0.8f);
+                c.drawRoundRect(r, s * 0.06f, s * 0.06f, p);
+                r.set(s * 0.54f, s * 0.2f, s * 0.88f, s * 0.8f);
+                c.drawRoundRect(r, s * 0.06f, s * 0.06f, p);
+                break;
+            case "expand":  // four corners: full screen
+                for (int i = 0; i < 4; i++) {
+                    float x = i % 2 == 0 ? 0.16f : 0.84f, y = i < 2 ? 0.16f : 0.84f;
+                    float dx = i % 2 == 0 ? 0.22f : -0.22f, dy = i < 2 ? 0.22f : -0.22f;
+                    c.drawLine(s * x, s * y, s * (x + dx), s * y, p);
+                    c.drawLine(s * x, s * y, s * x, s * (y + dy), p);
+                }
+                break;
+            case "bulb":  // Home Assistant lights: a bulb with a base
+                r.set(s * 0.26f, s * 0.12f, s * 0.74f, s * 0.6f);
+                c.drawArc(r, 140, 260, false, p);
+                path.moveTo(s * 0.36f, s * 0.5f);
+                path.lineTo(s * 0.4f, s * 0.7f);
+                path.lineTo(s * 0.6f, s * 0.7f);
+                path.lineTo(s * 0.64f, s * 0.5f);
+                c.drawPath(path, p);
+                c.drawLine(s * 0.4f, s * 0.84f, s * 0.6f, s * 0.84f, p);
+                break;
+            case "sensor":  // Home Assistant status: a gauge with a needle
+                r.set(s * 0.14f, s * 0.2f, s * 0.86f, s * 0.92f);
+                c.drawArc(r, 180, 180, false, p);
+                c.drawLine(s * 0.14f, s * 0.56f, s * 0.86f, s * 0.56f, p);
+                c.drawLine(m, s * 0.56f, s * 0.66f, s * 0.34f, p);
+                break;
             default:
                 break;
         }

@@ -76,9 +76,9 @@ public class MainActivity extends Activity {
 
     static final int COLS = 6;
     static final String SETTINGS_KEY = "special:settings";
-    static final String PRESENT_KEY = "special:present";
+    static final String PRESENT_KEY = "special:present", NEWS_KEY = "special:news", MUSIC_KEY = "special:music";
     static final String INPUTS_KEY = "special:inputs";
-    static final String FOLDER_KEY = "special:folder";
+    static final String FOLDER_KEY = "special:folder", HDMI_KEY = "special:hdmi", USER_FOLDER = "folder:";
     static final String PREF_ORDER = "order";
     static final String PREF_HIDDEN = "hidden";
     static final String TV_SETTINGS = "com.android.tv.settings";
@@ -124,6 +124,11 @@ public class MainActivity extends Activity {
     final List<AppEntry> apps = new ArrayList<>();
     /** Apps the user hid; reachable through the "More Apps" folder tile. */
     final List<AppEntry> hiddenApps = new ArrayList<>();
+    /** Folders the user made: id -> its apps and name (apps in a folder are not on the Home grid). */
+    final Map<String, List<AppEntry>> folderApps = new LinkedHashMap<>();
+    final Map<String, String> folderNames = new LinkedHashMap<>();
+    /** The user folder that is open (null in More Apps, or when no folder is open). */
+    String openFolder;
     /** What the grid currently shows: home apps (+ folder tile) or the folder's contents. */
     final List<AppEntry> shown = new ArrayList<>();
     final List<View> tiles = new ArrayList<>();
@@ -322,6 +327,7 @@ public class MainActivity extends Activity {
         if (moveIndex >= 0) endMove();
         if (folderMode) {
             folderMode = false;
+            openFolder = null;
             switcher.setAlpha(1f);
             weatherCard.setAlpha(weatherAlpha());
             launchTile = null;
@@ -667,7 +673,7 @@ public class MainActivity extends Activity {
         stopWiggle();
         shown.clear();
         if (folderMode) {
-            shown.addAll(hiddenApps);
+            shown.addAll(openFolder != null && folderApps.containsKey(openFolder) ? folderApps.get(openFolder) : hiddenApps);
         } else {
             shown.addAll(apps);
             if (!hiddenApps.isEmpty()) shown.add(folderEntry());
@@ -675,7 +681,7 @@ public class MainActivity extends Activity {
         // Like tvOS, the home grid has no big title; only the folder gets a header.
         titleBox.setVisibility(folderMode ? View.VISIBLE : View.GONE);
         chevron.setVisibility(folderMode ? View.GONE : View.VISIBLE);
-        shelfTitle.setText("More Apps");
+        shelfTitle.setText(openFolder != null && folderNames.containsKey(openFolder) ? folderNames.get(openFolder) : "More Apps");
         shelfHint.setText("Back to return   \u00b7   Hold OK for options");
 
         // Removing the focused card would make Android hand focus to the first card (and scroll
@@ -807,7 +813,8 @@ public class MainActivity extends Activity {
             v.animate().scaleX(FOCUS_SCALE * 0.92f).scaleY(FOCUS_SCALE * 0.92f).setDuration(Motion.d(90))
                     .setInterpolator(EASE).withEndAction(() -> {
                         v.animate().scaleX(FOCUS_SCALE).scaleY(FOCUS_SCALE).setDuration(Motion.d(140)).setInterpolator(LIFT).start();
-                        if (FOLDER_KEY.equals(a.key)) enterFolder();
+                        if (FOLDER_KEY.equals(a.key)) enterFolder(null);
+                        else if (a.key.startsWith(USER_FOLDER)) enterFolder(a.key.substring(USER_FOLDER.length()));
                         else launchAnimated(v, a);
                     }).start();
         });
@@ -2332,6 +2339,11 @@ public class MainActivity extends Activity {
             showInputs(tile);
             return;
         }
+        if (HDMI_KEY.equals(a.key)) {
+            Inputs.Input in = Inputs.direct(this);
+            if (in == null || !Inputs.open(this, in)) toast("Can't switch to " + a.label);
+            return;
+        }
 
         int[] loc = new int[2];
         tile.getLocationInWindow(loc);
@@ -2744,9 +2756,10 @@ public class MainActivity extends Activity {
         return b;
     }
 
-    void enterFolder() {
-        if (hiddenApps.isEmpty()) return;
+    void enterFolder(String id) {
+        if (id == null ? hiddenApps.isEmpty() : !folderApps.containsKey(id)) return;
         animateGridSwap(() -> {
+            openFolder = id;
             folderMode = true;
             setHeroShown(false);
             switcher.setAlpha(0f);
@@ -2761,12 +2774,14 @@ public class MainActivity extends Activity {
 
     void exitFolder() {
         animateGridSwap(() -> {
+            String was = openFolder != null ? USER_FOLDER + openFolder : FOLDER_KEY;
             folderMode = false;
+            openFolder = null;
             switcher.animate().alpha(1f).setDuration(Motion.d(250)).start();
             weatherCard.animate().alpha(weatherAlpha()).setDuration(Motion.d(250)).start();
             buildGrid();
             shelfEntry = null;
-            int i = indexOfKey(FOLDER_KEY);
+            int i = indexOfKey(was);
             focusIndex(i >= 0 ? i : 0);
         });
     }
@@ -2898,6 +2913,9 @@ public class MainActivity extends Activity {
         addResolved(pm, Intent.CATEGORY_LAUNCHER, pkgs, false);
         if (!pkgs.contains(TV_SETTINGS)) addSettingsEntry(pm);
         if (com.petrobot.hume.present.Presenter.enabled(this)) addPresentEntry();
+        addNewsEntry();
+        if (HomeAssistant.configured(this)) addMusicEntry();
+        addDirectEntry();
         inputs = Inputs.list(this);
         if (Inputs.showCard(this) && !inputs.isEmpty()) addInputsEntry();
         for (AppEntry e : all.values()) {
@@ -2905,6 +2923,7 @@ public class MainActivity extends Activity {
                 e.banner = new BitmapDrawable(getResources(), tvosCard(e));
             }
         }
+        applyFolders();
 
         Set<String> hidden = prefs.getStringSet(PREF_HIDDEN, Collections.emptySet());
         Map<String, AppEntry> pool = new LinkedHashMap<>();
@@ -2957,6 +2976,9 @@ public class MainActivity extends Activity {
         if (INPUTS_KEY.equals(e.key)) return -1;
         if (isSettings(e)) return 2000;
         if (PRESENT_KEY.equals(e.key)) return 1999;
+        if (HDMI_KEY.equals(e.key)) return -1;
+        if (NEWS_KEY.equals(e.key)) return 1500;
+        if (MUSIC_KEY.equals(e.key)) return 1501;
         int i = DEFAULT_ORDER.indexOf(e.pkg);
         return i >= 0 ? i : 1000;
     }
@@ -2982,6 +3004,50 @@ public class MainActivity extends Activity {
         p.setShader(new LinearGradient(0, 0, 0, h, 0xFF6E6E73, 0xFF2C2C2E, Shader.TileMode.CLAMP));
         c.drawRect(0, 0, w, h, p);
         Bitmap g = Glyphs.get("input", (int) (h * 0.5f), Color.WHITE);
+        c.drawBitmap(g, (w - g.getWidth()) / 2f, (h - g.getHeight()) / 2f, null);
+        e.banner = new BitmapDrawable(getResources(), b);
+        e.icon = e.banner;
+        all.put(e.key, e);
+    }
+
+    /** Music tile (with Home Assistant): choose what to play from Music Assistant, and where. */
+    void addMusicEntry() {
+        AppEntry e = new AppEntry();
+        e.key = MUSIC_KEY;
+        e.pkg = getPackageName();
+        e.label = "Musica";
+        e.system = true;
+        e.color = 0xFFAF3FD1;
+        e.launch = new Intent(this, MusicActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        int w = 640, h = 384;
+        Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(b);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+        p.setShader(new LinearGradient(0, 0, 0, h, 0xFFFF5E8A, 0xFF8E2DE2, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, p);
+        Bitmap g = Glyphs.get("music", (int) (h * 0.5f), Color.WHITE);
+        c.drawBitmap(g, (w - g.getWidth()) / 2f, (h - g.getHeight()) / 2f, null);
+        e.banner = new BitmapDrawable(getResources(), b);
+        e.icon = e.banner;
+        all.put(e.key, e);
+    }
+
+    /** News tile: opens Hume's own News app (the latest stories, tap one to read it). */
+    void addNewsEntry() {
+        AppEntry e = new AppEntry();
+        e.key = NEWS_KEY;
+        e.pkg = getPackageName();
+        e.label = "Notizie";
+        e.system = true;
+        e.color = 0xFFC0392B;
+        e.launch = new Intent(this, NewsActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        int w = 640, h = 384;
+        Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(b);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+        p.setShader(new LinearGradient(0, 0, 0, h, 0xFFFF6B5E, 0xFFB8302A, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, p);
+        Bitmap g = Glyphs.get("news", (int) (h * 0.5f), Color.WHITE);
         c.drawBitmap(g, (w - g.getWidth()) / 2f, (h - g.getHeight()) / 2f, null);
         e.banner = new BitmapDrawable(getResources(), b);
         e.icon = e.banner;
@@ -3058,7 +3124,10 @@ public class MainActivity extends Activity {
         // carousel the person is browsing.
         boolean onShelf = shelfView.isFocused();
         loadApps();
-        if (folderMode && hiddenApps.isEmpty()) folderMode = false;
+        if (folderMode && folderEmpty()) {
+            folderMode = false;
+            openFolder = null;
+        }
         buildGrid();
         shelfEntry = null;
         if (onShelf) {
@@ -3085,7 +3154,10 @@ public class MainActivity extends Activity {
         prefs.edit().putStringSet(PREF_HIDDEN, hidden).apply();
         int i = focusedIndex;
         loadApps();
-        if (folderMode && hiddenApps.isEmpty()) folderMode = false;
+        if (folderMode && folderEmpty()) {
+            folderMode = false;
+            openFolder = null;
+        }
         buildGrid();
         shelfEntry = null;
         focusIndex(Math.min(i, shown.size() - 1));
@@ -3112,6 +3184,241 @@ public class MainActivity extends Activity {
         }
     }
 
+
+    // ---------------------------------------------------------------- user folders and the HDMI tile
+
+    boolean folderEmpty() {
+        return openFolder != null ? !folderApps.containsKey(openFolder) : hiddenApps.isEmpty();
+    }
+
+    /** Takes the apps that live in a folder off the Home grid and adds a tile for each folder. */
+    void applyFolders() {
+        folderApps.clear();
+        folderNames.clear();
+        Set<String> hidden = prefs.getStringSet(PREF_HIDDEN, Collections.emptySet());
+        for (Folders.Folder f : Folders.read(prefs)) {
+            List<AppEntry> list = new ArrayList<>();
+            for (String k : f.keys) {
+                AppEntry e = all.get(k);
+                if (e != null && !hidden.contains(k) && !k.startsWith(USER_FOLDER)) list.add(e);
+            }
+            if (list.isEmpty()) continue;
+            for (AppEntry e : list) all.remove(e.key);
+            folderApps.put(f.id, list);
+            folderNames.put(f.id, f.name);
+            all.put(USER_FOLDER + f.id, folderTile(f.id, f.name, list));
+        }
+    }
+
+    /** A folder's tile: a glass card showing the first four apps as small icons. */
+    AppEntry folderTile(String id, String name, List<AppEntry> list) {
+        AppEntry t = new AppEntry();
+        t.key = USER_FOLDER + id;
+        t.pkg = getPackageName();
+        t.label = name;
+        t.system = true;
+        t.color = 0xFF3A3F4B;
+        int w = 640, h = 384;
+        Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(b);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+        p.setShader(new LinearGradient(0, 0, 0, h, 0xFF5C6475, 0xFF2B303B, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, p);
+        p.setShader(null);
+        int cw = 200, ch = 112, gx = 28, gy = 24;
+        float x0 = (w - (2 * cw + gx)) / 2f, y0 = (h - (2 * ch + gy)) / 2f;
+        for (int i = 0; i < 4; i++) {
+            float x = x0 + (i % 2) * (cw + gx), y = y0 + (i / 2) * (ch + gy);
+            RectF cell = new RectF(x, y, x + cw, y + ch);
+            p.setColor(i < list.size() ? 0xFF1C1C1E : 0x26FFFFFF);
+            c.drawRoundRect(cell, 16, 16, p);
+            if (i >= list.size()) continue;
+            AppEntry e = list.get(i);
+            Drawable d = e.banner != null ? e.banner : e.icon;
+            if (d == null) continue;
+            c.save();
+            android.graphics.Path clip = new android.graphics.Path();
+            clip.addRoundRect(cell, 16, 16, android.graphics.Path.Direction.CW);
+            c.clipPath(clip);
+            Rect old = d.copyBounds();
+            if (e.banner != null) {
+                d.setBounds((int) x, (int) y, (int) (x + cw), (int) (y + ch));
+            } else {
+                int s = (int) (ch * 0.7f);
+                d.setBounds((int) (x + (cw - s) / 2f), (int) (y + (ch - s) / 2f), (int) (x + (cw + s) / 2f), (int) (y + (ch + s) / 2f));
+            }
+            d.draw(c);
+            d.setBounds(old);
+            c.restore();
+        }
+        t.banner = new BitmapDrawable(getResources(), b);
+        t.icon = t.banner;
+        return t;
+    }
+
+    /** The tile that switches straight to one input (HDMI 4 / Wii U by default). */
+    void addDirectEntry() {
+        Inputs.Input in = Inputs.direct(this);
+        if (in == null) return;
+        AppEntry e = new AppEntry();
+        e.key = HDMI_KEY;
+        e.pkg = getPackageName();
+        e.label = Inputs.directName(this, in);
+        e.system = true;
+        e.color = 0xFF0A9BD8;
+        int w = 640, h = 384;
+        Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(b);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+        p.setShader(new LinearGradient(0, 0, 0, h, 0xFF37C3F5, 0xFF0A78B8, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, p);
+        Bitmap logo = Inputs.picture(this, in);
+        if (logo == null && Inputs.icon(this, in).startsWith("url:")) {
+            // Your web image is not downloaded yet: fetch it, then redraw this tile.
+            Inputs.fetchIcon(this, Inputs.icon(this, in).substring(4), () -> reload(null));
+        }
+        if (logo != null) {
+            // A logo: on a light card so its own colours read well.
+            p.setShader(new LinearGradient(0, 0, 0, h, 0xFFFFFFFF, 0xFFDDE3EA, Shader.TileMode.CLAMP));
+            c.drawRect(0, 0, w, h, p);
+            p.setShader(null);
+            float scale = Math.min(w * 0.72f / logo.getWidth(), h * 0.62f / logo.getHeight());
+            float lw = logo.getWidth() * scale, lh = logo.getHeight() * scale;
+            c.drawBitmap(logo, null, new RectF((w - lw) / 2f, (h - lh) / 2f, (w + lw) / 2f, (h + lh) / 2f),
+                    new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG));
+        } else {
+            Bitmap g = Glyphs.get(Inputs.glyph(this, in), (int) (h * 0.5f), Color.WHITE);
+            c.drawBitmap(g, (w - g.getWidth()) / 2f, (h - g.getHeight()) / 2f, null);
+        }
+        e.banner = new BitmapDrawable(getResources(), b);
+        e.icon = e.banner;
+        all.put(e.key, e);
+    }
+
+    /** Picks the folder to put an app in (or a new one). */
+    void chooseFolderFor(AppEntry a, View tile) {
+        List<String> labels = new ArrayList<>();
+        List<Runnable> actions = new ArrayList<>();
+        for (Folders.Folder f : Folders.read(prefs)) {
+            if (f.id.equals(openFolder)) continue;
+            labels.add(f.name);
+            actions.add(() -> addToFolder(a, f.id));
+        }
+        labels.add("New Folder…");
+        actions.add(() -> newFolderFor(a, tile));
+        showMenu(tile, "Move to Folder", labels, actions, -1);
+    }
+
+    /** Name for a new folder: a few ready names (typing on a remote is slow), or your own. */
+    void newFolderFor(AppEntry a, View tile) {
+        String[] presets = {"Giochi", "Streaming", "Musica", "Utility", "Famiglia"};
+        List<String> labels = new ArrayList<>();
+        List<Runnable> actions = new ArrayList<>();
+        for (String n : presets) {
+            labels.add(n);
+            actions.add(() -> createFolder(a, n));
+        }
+        labels.add("Other name…");
+        actions.add(() -> askFolderName("New Folder", "", n -> createFolder(a, n)));
+        showMenu(tile, "Folder name", labels, actions, -1);
+    }
+
+    interface NameDone {
+        void got(String name);
+    }
+
+    void askFolderName(String title, String initial, NameDone done) {
+        android.widget.EditText in = new android.widget.EditText(this);
+        in.setSingleLine(true);
+        in.setHint("Folder name");
+        in.setText(initial);
+        in.setSelection(in.getText().length());
+        in.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        int pad = dp(14);
+        FrameLayout box = new FrameLayout(this);
+        box.setPadding(pad, pad / 2, pad, 0);
+        box.addView(in);
+        Clicks.dialog(this).setTitle(title).setView(box)
+                .setPositiveButton("OK", (d, w) -> {
+                    String n = in.getText().toString().trim();
+                    if (!n.isEmpty()) done.got(n);
+                }).setNegativeButton("Cancel", null).show();
+        in.requestFocus();
+    }
+
+    /** The new folder takes the app's place on the Home grid. */
+    void createFolder(AppEntry a, String name) {
+        List<Folders.Folder> list = Folders.read(prefs);
+        for (Folders.Folder f : list) f.keys.remove(a.key);
+        Folders.Folder nf = new Folders.Folder();
+        nf.id = Folders.newId();
+        nf.name = name;
+        nf.keys.add(a.key);
+        list.add(nf);
+        Folders.write(prefs, list);
+        int idx = apps.indexOf(a);
+        if (idx >= 0) {
+            apps.set(idx, folderTile(nf.id, name, java.util.Collections.singletonList(a)));
+            saveOrder();
+        }
+        if (folderMode) {
+            folderMode = false;
+            openFolder = null;
+        }
+        reload(USER_FOLDER + nf.id);
+        toast(a.label + " moved to " + name);
+    }
+
+    void addToFolder(AppEntry a, String id) {
+        List<Folders.Folder> list = Folders.read(prefs);
+        String name = "";
+        for (Folders.Folder f : list) {
+            f.keys.remove(a.key);
+            if (f.id.equals(id)) {
+                f.keys.add(a.key);
+                name = f.name;
+            }
+        }
+        Folders.write(prefs, list);
+        apps.remove(a);
+        saveOrder();
+        reload(USER_FOLDER + id);
+        toast(a.label + " moved to " + name);
+    }
+
+    void removeFromFolder(AppEntry a) {
+        List<Folders.Folder> list = Folders.read(prefs);
+        for (Folders.Folder f : list) f.keys.remove(a.key);
+        Folders.write(prefs, list);
+        reload(a.key);
+        toast(a.label + " is back on Home");
+    }
+
+    void renameFolder(String id) {
+        List<Folders.Folder> list = Folders.read(prefs);
+        for (Folders.Folder f : list) {
+            if (!f.id.equals(id)) continue;
+            askFolderName("Rename Folder", f.name, n -> {
+                f.name = n;
+                Folders.write(prefs, list);
+                reload(USER_FOLDER + id);
+            });
+        }
+    }
+
+    /** Deleting a folder puts its apps back on the Home grid. */
+    void deleteFolder(String id) {
+        List<Folders.Folder> list = Folders.read(prefs);
+        for (java.util.Iterator<Folders.Folder> it = list.iterator(); it.hasNext(); ) if (it.next().id.equals(id)) it.remove();
+        Folders.write(prefs, list);
+        if (folderMode && id.equals(openFolder)) {
+            folderMode = false;
+            openFolder = null;
+        }
+        reload(null);
+        toast("Folder deleted");
+    }
+
     // ---------------------------------------------------------------- options
 
     void showOptions(int index) {
@@ -3119,20 +3426,40 @@ public class MainActivity extends Activity {
         View tile = tiles.get(index);
         List<String> labels = new ArrayList<>();
         List<Runnable> actions = new ArrayList<>();
+        if (a.key.startsWith(USER_FOLDER)) {
+            String id = a.key.substring(USER_FOLDER.length());
+            labels.add("Open");
+            actions.add(() -> enterFolder(id));
+            labels.add("Move");
+            actions.add(() -> startMove(index));
+            labels.add("Rename");
+            actions.add(() -> renameFolder(id));
+            labels.add("Delete Folder");
+            actions.add(() -> deleteFolder(id));
+            showMenu(tile, a.label, labels, actions, labels.indexOf("Delete Folder"));
+            return;
+        }
         labels.add("Open");
         actions.add(() -> launchAnimated(tile, a));
-        if (folderMode) {
+        if (folderMode && openFolder != null) {
+            labels.add("Remove from Folder");
+            actions.add(() -> removeFromFolder(a));
+            labels.add("Move to Another Folder");
+            actions.add(() -> chooseFolderFor(a, tile));
+        } else if (folderMode) {
             labels.add("Show on Home Screen");
             actions.add(() -> setHidden(a, false));
         } else {
             labels.add("Move");
             actions.add(() -> startMove(index));
+            labels.add("Add to Folder");
+            actions.add(() -> chooseFolderFor(a, tile));
             if (!isSettings(a)) {
                 labels.add("Hide");
                 actions.add(() -> setHidden(a, true));
             }
         }
-        if (!isSettings(a) && !INPUTS_KEY.equals(a.key)) {
+        if (!isSettings(a) && !INPUTS_KEY.equals(a.key) && !HDMI_KEY.equals(a.key)) {
             labels.add("App Info");
             actions.add(() -> startSafe(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                     Uri.parse("package:" + a.pkg))));
@@ -3202,8 +3529,10 @@ public class MainActivity extends Activity {
                 v -> Clicks.setEnabled(this, !Clicks.enabled(this))));
         // Row 5: round shortcuts \u2014 Inputs (TVs with inputs) or Accessibility, controllers, Settings, Search.
         int y4 = yMs + cap + gap;
-        String[] g = inputs.isEmpty() ? new String[]{"gamepad", "accessibility", "gear", "search"}
-                : new String[]{"input", "gamepad", "gear", "search"};
+        // With Home Assistant connected, its house replaces Search here (Search has its own button in the status row).
+        String last = HomeAssistant.configured(this) ? "house" : "search";
+        String[] g = inputs.isEmpty() ? new String[]{"gamepad", "accessibility", "gear", last}
+                : new String[]{"input", "gamepad", "gear", last};
         for (int i = 0; i < g.length; i++) {
             String name = g[i];
             cells.add(ccTile(panel, i * (small + gap), y4, small, small, name, null, null, false, v -> {
@@ -3212,6 +3541,9 @@ public class MainActivity extends Activity {
                     case "accessibility": Suggestions.start(this, new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); break;
                     case "input":
                         showInputs(ccButton);
+                        return;
+                    case "house":
+                        showHomeAssistant(ccButton);
                         return;
                     case "gear":
                         returningFromSettings = true;
@@ -3534,7 +3866,7 @@ public class MainActivity extends Activity {
         for (int i = 0; i < list.size(); i++) {
             Inputs.Input in = list.get(i);
             int x = (i % 2) * (col + gap), y = top + (i / 2) * (cap + gap);
-            cells.add(ccTile(panel, x, y, col, cap, Inputs.glyph(in), in.label,
+            cells.add(ccTile(panel, x, y, col, cap, Inputs.glyph(this, in), in.label,
                     in.disconnected ? () -> "Not connected" : null, false, v -> {
                         closeProfilePicker();
                         if (!Inputs.open(this, in)) toast("Can't switch to " + in.label);
@@ -3556,6 +3888,73 @@ public class MainActivity extends Activity {
         panel.animate().translationY(0).setDuration(Motion.d(260)).setInterpolator(EASE).start();
         Motion.cascade(cells, -dp(8));  // tiles drop in one after another, like tvOS
         cells.get(0).requestFocus();
+    }
+
+    // ---------------------------------------------------------------- Home Assistant
+
+    /** Panel of the buttons and status tiles chosen in Settings \u2192 Home Assistant, in Control Center's style. */
+    void showHomeAssistant(View from) {
+        List<HomeAssistant.Item> items = HomeAssistant.items(this);
+        if (items.isEmpty()) {
+            toast("Choose buttons in Settings \u2192 Home Assistant");
+            return;
+        }
+        dropPicker();
+        stopSway(null);
+        popoverReturn = from;
+        FrameLayout layer = new FrameLayout(this);
+        layer.setClickable(true);
+        layer.setClipChildren(false);
+        addBlurredBackdrop(layer, 0x8C000000);
+
+        int col = dp(141), gap = dp(13), cap = (col - gap) / 2;
+        FrameLayout panel = new FrameLayout(this);
+        panel.setClipChildren(false);
+        List<View> cells = new ArrayList<>();
+        TextView title = text(13, Ui.font(this, "semibold"), 0.75f);
+        title.setText("Home");
+        panel.addView(title, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(20)));
+        int top = dp(26);
+        for (int i = 0; i < items.size(); i++) {
+            HomeAssistant.Item it = items.get(i);
+            int x = (i % 2) * (col + gap), y = top + (i / 2) * (cap + gap);
+            cells.add(ccTile(panel, x, y, col, cap, HomeAssistant.glyph(it.domain()), it.name,
+                    () -> HomeAssistant.status(it), false, v -> {
+                        if (!HomeAssistant.isAction(it.domain())) {
+                            refreshHomeTiles(cells, items);
+                            return;
+                        }
+                        HomeAssistant.activate(this, it, () -> refreshHomeTiles(cells, items));
+                    }));
+        }
+        int rows = (items.size() + 1) / 2;
+        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(2 * col + gap, top + rows * cap + (rows - 1) * gap,
+                Gravity.TOP | Gravity.END);
+        plp.topMargin = dp(72);
+        plp.rightMargin = dockOuter;
+        layer.addView(panel, plp);
+
+        root.addView(layer, match());
+        pickerLayer = layer;
+        pickerCells = cells;
+        layer.setAlpha(0f);
+        panel.setTranslationY(-Motion.dist(dp(10)));
+        layer.animate().alpha(1f).setDuration(Motion.d(200)).start();
+        panel.animate().translationY(0).setDuration(Motion.d(260)).setInterpolator(EASE).start();
+        Motion.cascade(cells, -dp(8));
+        cells.get(0).requestFocus();
+        HomeAssistant.refreshStates(this, items, () -> refreshHomeTiles(cells, items));
+    }
+
+    /** Re-reads each tile's status line (the second text of the tile) while the panel is open. */
+    void refreshHomeTiles(List<View> cells, List<HomeAssistant.Item> items) {
+        if (pickerLayer == null || pickerCells != cells) return;
+        for (int i = 0; i < cells.size() && i < items.size(); i++) {
+            View texts = ((ViewGroup) cells.get(i)).getChildAt(1);
+            if (texts instanceof ViewGroup && ((ViewGroup) texts).getChildCount() > 1) {
+                ((TextView) ((ViewGroup) texts).getChildAt(1)).setText(HomeAssistant.status(items.get(i)));
+            }
+        }
     }
 
     // ---------------------------------------------------------------- internet status
@@ -3860,10 +4259,7 @@ public class MainActivity extends Activity {
         FrameLayout layer = new FrameLayout(this);
         layer.setClickable(true);
         layer.setClipChildren(false);
-        View shade = new View(this);
-        shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{0xA6000000, 0x4D000000, 0x00000000}));
-        layer.addView(shade, new FrameLayout.LayoutParams(screenW * 3 / 5, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START));
+        addBlurredBackdrop(layer, 0x8C000000);
 
         WeatherView panel = new WeatherView(this, true, unit);
         LiquidGlass glass = new LiquidGlass(dp(26), 0x33000000, glassSource, screenW, screenH, unit).adaptive();

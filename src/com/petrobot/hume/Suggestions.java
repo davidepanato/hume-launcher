@@ -32,7 +32,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Top-shelf suggestions: what's popular in India on the user's streaming services, from TMDB
+ * Top-shelf suggestions: what's popular in Italy on the user's streaming services, from TMDB
  * (themoviedb.org). Results and artwork are cached on disk; everything here runs off the UI thread.
  */
 final class Suggestions {
@@ -52,7 +52,7 @@ final class Suggestions {
     /** POOL titles are fetched per service; PER_SOURCE of them are picked at random each refresh. */
     static final int PER_SOURCE = 3, POOL = 20, MAX_ITEMS = 10;
 
-    /** A streaming service available in India: TMDB provider id, display name, Android TV package. */
+    /** A streaming service available in Italy: TMDB provider id, display name, Android TV package. */
     static final class Provider {
         final int id;
         final String name, pkg, jwShort, jwTech;
@@ -69,10 +69,11 @@ final class Suggestions {
     static final List<Provider> PROVIDERS = Arrays.asList(
             new Provider(8, "Netflix", "com.netflix.ninja", "nfx", "netflix"),
             new Provider(119, "Prime Video", "com.amazon.amazonvideo.livingroom", "prv", "amazonprimevideo"),
-            new Provider(2336, "JioHotstar", "in.startv.hotstar", "jhs", "jiohotstar"),
+            new Provider(337, "Disney+", "com.disney.disneyplus", "dnp", "disneyplus"),
             new Provider(350, "Apple TV", "com.apple.atve.androidtv.appletv", "atp", "appletvplus"),
-            new Provider(232, "ZEE5", "com.graymatrix.did", "zee", "zee5"),
-            new Provider(237, "SonyLIV", "com.sonyliv", "snl", "sonyliv"));
+            new Provider(222, "RaiPlay", "it.rainet.androidtv", "rai", "raiplay"),
+            new Provider(531, "Paramount+", "com.cbs.ott", "pmp", "paramountplus"),
+            new Provider(1899, "HBO Max", "com.wbd.stream", "mxx", "max"));
 
     /**
      * Apps that open Cinemeta titles by IMDb id. Not streaming services, so they never appear in
@@ -83,8 +84,8 @@ final class Suggestions {
             NUVIO = new Provider(NUVIO_ID, "Nuvio", "com.nuvio.tv", "", "");
 
     /** Original-language filters offered in settings (TMDB ISO 639-1 codes). */
-    static final String[] LANG_CODES = {"hi", "en", "ta", "te", "ml", "kn", "bn", "mr"};
-    static final String[] LANG_NAMES = {"Hindi", "English", "Tamil", "Telugu", "Malayalam", "Kannada", "Bengali", "Marathi"};
+    static final String[] LANG_CODES = {"it", "en", "fr", "es", "de", "ja", "ko"};
+    static final String[] LANG_NAMES = {"Italian", "English", "French", "Spanish", "German", "Japanese", "Korean"};
 
     static final class Item {
         int id, providerId;
@@ -316,7 +317,7 @@ final class Suggestions {
             + " title originalReleaseYear shortDescription genres { shortName } backdrops { backdropUrl } scoring { imdbScore } }"
             + " offers(country: $country, platform: WEB) { standardWebURL package { technicalName } } } } } }";
 
-    /** What's popular in India per service, from JustWatch's public GraphQL endpoint (no key). */
+    /** What's popular in Italy per service, from JustWatch's public GraphQL endpoint (no key). */
     static List<List<Item>> fetchJustWatch(Context c) throws Exception {
         String t = types(c);
         List<String> kinds = t.equals("both") ? Arrays.asList("tv", "movie") : Arrays.asList(t);
@@ -329,7 +330,7 @@ final class Suggestions {
                         .put("packages", new JSONArray().put(p.jwShort))
                         .put("objectTypes", new JSONArray().put(kind.equals("tv") ? "SHOW" : "MOVIE"))
                         .put("monetizationTypes", new JSONArray().put("FLATRATE").put("FREE").put("ADS"));
-                JSONObject vars = new JSONObject().put("country", "IN").put("language", "en")
+                JSONObject vars = new JSONObject().put("country", "IT").put("language", "it")
                         .put("first", POOL).put("filter", filter);
                 JSONObject body = new JSONObject().put("query", JW_QUERY).put("variables", vars);
                 JSONObject res = post("https://apis.justwatch.com/graphql", body.toString());
@@ -465,8 +466,8 @@ final class Suggestions {
             if (!provs.contains(String.valueOf(p.id))) continue;
             for (String kind : kinds) {
                 StringBuilder q = new StringBuilder("/discover/").append(kind)
-                        .append("?watch_region=IN&with_watch_monetization_types=flatrate&sort_by=popularity.desc")
-                        .append("&language=en-IN&include_adult=false&with_watch_providers=").append(p.id);
+                        .append("?watch_region=IT&with_watch_monetization_types=flatrate&sort_by=popularity.desc")
+                        .append("&language=it-IT&include_adult=false&with_watch_providers=").append(p.id);
                 if (!langs.isEmpty()) q.append("&with_original_language=").append(URLEncoder.encode(String.join("|", langs), "UTF-8"));
                 JSONArray results = get(c, q.toString()).optJSONArray("results");
                 List<Item> list = new ArrayList<>();

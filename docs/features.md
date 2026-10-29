@@ -94,19 +94,19 @@ remote, the Search key on remotes that have one, or just start typing on a keybo
 Assistant/mic button on most Android TV remotes is taken by Google Assistant before any app sees
 it, so it can't open Hume's Search.)
 
-- **Keyboard**: a–z, space, delete, **123** (digits and punctuation), **अआ** (Hindi letters) and
+- **Keyboard**: a–z, space, delete, **123** (digits and punctuation), the Italian accents (à è é ì ò ù) and
   clear. A USB/Bluetooth keyboard and the remote's number keys type too.
 - **Dictation**: the **mic** beside the search field (Up from the keyboard), or the remote's
   search/mic button on Home or in Search. Where the TV has Google's voice service, the words appear
   in the field as you speak and results follow; the microphone is asked for on screen the first
   time. Esc on a keyboard, or Back, closes Search. Without that permission or service, the TV's own voice prompt (Google's) listens instead.
-  English and Hindi (Indian English, with Hindi as a second language).
+  Italian, with English as a second language.
 - **Before typing**: your recent searches (per profile) and what's trending in the carousel.
 - **Apps & Settings** (instant, no internet): installed apps including hidden ones, TV inputs
   ("HDMI 2"), Hume screens (Control Center, Weather, Switch Profile, Hume Settings) and TV settings
   ("wifi", "bluetooth", "screensaver"…).
-- **Movies & TV**: every title on any streaming service in India from JustWatch — Hindi and
-  regional titles included, and searches typed in Hindi (पंचायत) work — as posters with the logos
+- **Movies & TV**: every title on any streaming service in Italy from JustWatch, in Italian,
+  as posters with the logos
   of the services that have each one. With Stremio or Nuvio installed, **On Stremio** adds titles
   only Stremio's catalogue has. Titles are searched once typing pauses; repeat searches are
   instant.
