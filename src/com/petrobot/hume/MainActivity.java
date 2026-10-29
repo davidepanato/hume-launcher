@@ -1689,6 +1689,13 @@ public class MainActivity extends Activity {
 
     /** Up from the shelf/dock: the tab bar, or the status row when the tab bar is hidden. */
     void focusTop() {
+        if (switcher != null && switcher.getVisibility() == View.VISIBLE) switcher.requestFocus();
+        else if (weatherShown()) weatherCard.requestFocus();  // top-left, like reading the screen
+        else ccButton.requestFocus();
+    }
+
+    /** From the weather card, Right goes on to the status row (or the tab bar). */
+    void focusStatusTop() {
         (switcher != null && switcher.getVisibility() == View.VISIBLE ? switcher : ccButton).requestFocus();
     }
 
@@ -1791,7 +1798,9 @@ public class MainActivity extends Activity {
         }
         View f = getCurrentFocus();
         int i = tiles.indexOf(f);
-        boolean dock = f == shelfView || (hasDock() && i >= 0 && i < COLS);
+        // Visible unless the focus is on a lower row of the grid: from the status row, the weather
+        // card, a popover or Refresh the carousel must stay (and come back) after new items load.
+        boolean dock = i >= 0 ? hasDock() && i < COLS : true;
         setHeroShown(dock);
         if (!(same && items.get(keep).title.equals(curTitle))) showHero(keep, 0);
         else for (int j = 0; j < heroDots.getChildCount(); j++) heroDots.getChildAt(j).setAlpha(j == keep ? 1f : 0.35f);
@@ -2199,7 +2208,12 @@ public class MainActivity extends Activity {
                 case KeyEvent.KEYCODE_ENTER:
                     if (!down) setShelfMode(continueMode() ? "suggest" : "continue");
                     return true;
-                case KeyEvent.KEYCODE_DPAD_UP: if (down) ccButton.requestFocus(); return true;
+                case KeyEvent.KEYCODE_DPAD_UP:
+                    if (down) {
+                        if (weatherShown()) weatherCard.requestFocus();  // top-left first
+                        else ccButton.requestFocus();
+                    }
+                    return true;
                 case KeyEvent.KEYCODE_DPAD_DOWN:
                 case KeyEvent.KEYCODE_BACK:
                     if (down) {
@@ -2242,7 +2256,7 @@ public class MainActivity extends Activity {
         }
         if (f == weatherCard) {
             switch (k) {
-                case KeyEvent.KEYCODE_DPAD_RIGHT: if (down) focusTop(); return true;
+                case KeyEvent.KEYCODE_DPAD_RIGHT: if (down) focusStatusTop(); return true;
                 case KeyEvent.KEYCODE_DPAD_DOWN:
                 case KeyEvent.KEYCODE_BACK:
                     if (down) {
