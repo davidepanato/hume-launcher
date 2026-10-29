@@ -534,9 +534,9 @@ public class MainActivity extends Activity {
         timeChip.setOrientation(LinearLayout.HORIZONTAL);
         timeChip.setGravity(Gravity.CENTER_VERTICAL);
         timeChip.setPadding(dp(12), 0, dp(14), 0);
-        GradientDrawable chipBg = new GradientDrawable();
-        chipBg.setCornerRadius(btn / 2f);
-        chipBg.setColor(0x47000000);
+        // The same fill as the weather pill (not backdrop-adaptive glass, whose colour would differ
+        // from one side of the screen to the other).
+        GradientDrawable chipBg = pillFill(btn / 2f);
         timeChip.setBackground(chipBg);
         time.setShadowLayer(dp(8), 0, dp(1), 0x99000000);
         timeChip.addView(netIcon, nlp);
@@ -686,8 +686,7 @@ public class MainActivity extends Activity {
 
         // Weather overview in the top-left corner, over the top shelf; OK opens the forecast.
         weatherCard = new WeatherView(this, false, unit);
-        weatherGlass = new LiquidGlass(dp(WeatherView.COMPACT_H) / 2f, 0x2E000000, glassSource, screenW, screenH, unit).adaptive();
-        weatherGlass.lens = dp(6);
+        weatherGlass = pillFill(dp(WeatherView.COMPACT_H) / 2f);
         weatherCard.setBackground(weatherGlass);
         weatherCard.setFocusable(true);
         weatherCard.setClickable(true);
@@ -1745,7 +1744,7 @@ public class MainActivity extends Activity {
 
     /** From the weather card, Right goes on to the status row (or the tab bar). */
     void focusStatusTop() {
-        (switcher != null && switcher.getVisibility() == View.VISIBLE ? switcher : ccButton).requestFocus();
+        (switcher != null && switcher.getVisibility() == View.VISIBLE ? switcher : clockChip).requestFocus();
     }
 
     boolean continueMode() {
@@ -2089,7 +2088,16 @@ public class MainActivity extends Activity {
     SearchPanel search;
     android.net.ConnectivityManager.NetworkCallback netCallback;
     WeatherView weatherCard;
-    LiquidGlass weatherGlass;
+    GradientDrawable weatherGlass;
+
+    /** The resting fill of the clock and weather pills: one dark translucent colour with a fine light rim. */
+    GradientDrawable pillFill(float radius) {
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(radius);
+        g.setColor(0x6B16161C);
+        g.setStroke(Math.max(1, dp(1)), 0x33FFFFFF);
+        return g;
+    }
     int avatarSize;
     FrameLayout pickerLayer;
     BroadcastReceiver wakeReceiver;
