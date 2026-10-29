@@ -566,8 +566,7 @@ public class MainActivity extends Activity {
         refreshButton = new ImageView(this);
         refreshButton.setScaleType(ImageView.ScaleType.CENTER);
         refreshButton.setImageBitmap(Glyphs.get("refresh", dp(20), Color.WHITE));
-        LiquidGlass rfGlass = new LiquidGlass(btn / 2f, 0x1F000000, glassSource, screenW, screenH, unit).adaptive();
-        rfGlass.lens = dp(4);
+        GradientDrawable rfGlass = pillFill(btn / 2f);
         refreshButton.setBackground(rfGlass);
         refreshButton.setFocusable(true);
         refreshButton.setClickable(true);
@@ -588,8 +587,7 @@ public class MainActivity extends Activity {
         searchButton = new ImageView(this);
         searchButton.setScaleType(ImageView.ScaleType.CENTER);
         searchButton.setImageBitmap(Glyphs.get("search", dp(20), Color.WHITE));
-        LiquidGlass seGlass = new LiquidGlass(btn / 2f, 0x1F000000, glassSource, screenW, screenH, unit).adaptive();
-        seGlass.lens = dp(4);
+        GradientDrawable seGlass = pillFill(btn / 2f);
         searchButton.setBackground(seGlass);
         searchButton.setFocusable(true);
         searchButton.setClickable(true);
@@ -610,8 +608,7 @@ public class MainActivity extends Activity {
         homeButton = new ImageView(this);
         homeButton.setScaleType(ImageView.ScaleType.CENTER);
         homeButton.setImageBitmap(Glyphs.get("house", dp(20), Color.WHITE));
-        LiquidGlass hmGlass = new LiquidGlass(btn / 2f, 0x1F000000, glassSource, screenW, screenH, unit).adaptive();
-        hmGlass.lens = dp(4);
+        GradientDrawable hmGlass = pillFill(btn / 2f);
         homeButton.setBackground(hmGlass);
         homeButton.setFocusable(true);
         homeButton.setClickable(true);
@@ -632,8 +629,7 @@ public class MainActivity extends Activity {
         ccButton = new ImageView(this);
         ccButton.setScaleType(ImageView.ScaleType.CENTER);
         ccButton.setImageBitmap(Glyphs.get("controls", dp(20), Color.WHITE));
-        LiquidGlass ccGlass = new LiquidGlass(btn / 2f, 0x1F000000, glassSource, screenW, screenH, unit).adaptive();
-        ccGlass.lens = dp(4);
+        GradientDrawable ccGlass = pillFill(btn / 2f);
         ccButton.setBackground(ccGlass);
         ccButton.setFocusable(true);
         ccButton.setClickable(true);
