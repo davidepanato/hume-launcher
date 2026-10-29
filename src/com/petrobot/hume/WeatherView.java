@@ -21,6 +21,8 @@ final class WeatherView extends View {
     final boolean full;
     final float u;
     Weather.Data data;
+    /** Focused look of the compact pill: dark text on a white capsule, like the other buttons. */
+    private boolean focusedLook;
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.SUBPIXEL_TEXT_FLAG);
     private final Paint bar = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final android.graphics.Typeface regular, medium, semibold;
@@ -33,6 +35,12 @@ final class WeatherView extends View {
         regular = Ui.font(c, "regular");
         medium = Ui.font(c, "medium");
         semibold = Ui.font(c, "semibold");
+    }
+
+    void setFocusedLook(boolean on) {
+        if (focusedLook == on) return;
+        focusedLook = on;
+        invalidate();
     }
 
     void setData(Weather.Data d) {
@@ -87,6 +95,13 @@ final class WeatherView extends View {
     private void drawCompact(Canvas c) {
         Weather.Data d = data;
         float h = getHeight(), w = getWidth(), pad = 16 * u, is = 24 * u, mid = h / 2f;
+        if (focusedLook) {
+            // White clouds would vanish on the white capsule: put the icon on a dark disc.
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(0xFF3A3F4B);
+            p.setAlpha(255);
+            c.drawCircle(pad + is / 2f, mid, is * 0.66f, p);
+        }
         icon(c, d.code, d.day, pad, mid - is / 2f, is);
         float tx = pad + is + 8 * u;
         p.setLetterSpacing(-0.03f);
@@ -121,7 +136,7 @@ final class WeatherView extends View {
         a.lineTo(x + s * 0.55f, y + s);
         a.close();
         p.setStyle(Paint.Style.FILL);
-        p.setColor(0xFFFFFFFF);
+        p.setColor(focusedLook ? 0xFF111114 : 0xFFFFFFFF);
         p.setAlpha(230);
         c.drawPath(a, p);
     }
@@ -238,7 +253,7 @@ final class WeatherView extends View {
     }
 
     private float text(Canvas c, String s, float x, float y, float size, android.graphics.Typeface tf, float alpha, Paint.Align al) {
-        return text(c, s, x, y, size, tf, alpha, al, 0xFFFFFFFF);
+        return text(c, s, x, y, size, tf, alpha, al, focusedLook && !full ? 0xFF111114 : 0xFFFFFFFF);
     }
 
     private float text(Canvas c, String s, float x, float y, float size, android.graphics.Typeface tf, float alpha, Paint.Align al, int color) {

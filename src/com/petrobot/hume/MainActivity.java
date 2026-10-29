@@ -353,6 +353,8 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        // The Home automation button follows Home Assistant being connected (or forgotten) in Settings.
+        if (homeButton != null) homeButton.setVisibility(HomeAssistant.configured(this) ? View.VISIBLE : View.GONE);
         String ws = Profiles.homePrefs(this).getString("wallpaper", "aurora");
         if (!ws.equals(wallStyle)) {
             wallStyle = ws;
@@ -585,6 +587,29 @@ public class MainActivity extends Activity {
         });
         searchButton.setOnClickListener(v -> showSearch(null));
 
+        // Home automation (Home Assistant): scenes, lights, sensors. Only with Home Assistant connected.
+        homeButton = new ImageView(this);
+        homeButton.setScaleType(ImageView.ScaleType.CENTER);
+        homeButton.setImageBitmap(Glyphs.get("house", dp(20), Color.WHITE));
+        LiquidGlass hmGlass = new LiquidGlass(btn / 2f, 0x1F000000, glassSource, screenW, screenH, unit).adaptive();
+        hmGlass.lens = dp(4);
+        homeButton.setBackground(hmGlass);
+        homeButton.setFocusable(true);
+        homeButton.setClickable(true);
+        LinearLayout.LayoutParams hblp = new LinearLayout.LayoutParams(btn, btn);
+        hblp.leftMargin = dp(12);
+        clockBox.addView(homeButton, hblp);
+        GradientDrawable hmLit = new GradientDrawable();
+        hmLit.setShape(GradientDrawable.OVAL);
+        hmLit.setColor(Color.WHITE);
+        homeButton.setOnFocusChangeListener((v, has) -> {
+            homeButton.setBackground(has ? hmLit : hmGlass);
+            homeButton.setImageBitmap(Glyphs.get("house", dp(20), has ? 0xFF111114 : Color.WHITE));
+            v.animate().scaleX(has ? 1.12f : 1f).scaleY(has ? 1.12f : 1f).setDuration(Motion.d(200)).setInterpolator(LIFT).start();
+        });
+        homeButton.setOnClickListener(v -> showHomeAssistant(homeButton));
+        homeButton.setVisibility(HomeAssistant.configured(this) ? View.VISIBLE : View.GONE);
+
         ccButton = new ImageView(this);
         ccButton.setScaleType(ImageView.ScaleType.CENTER);
         ccButton.setImageBitmap(Glyphs.get("controls", dp(20), Color.WHITE));
@@ -647,8 +672,13 @@ public class MainActivity extends Activity {
         weatherCard.setBackground(weatherGlass);
         weatherCard.setFocusable(true);
         weatherCard.setClickable(true);
+        GradientDrawable weatherLit = new GradientDrawable();
+        weatherLit.setCornerRadius(dp(WeatherView.COMPACT_H) / 2f);
+        weatherLit.setColor(Color.WHITE);
         weatherCard.setOnFocusChangeListener((v, has) -> {
-            weatherGlass.setLit(has);
+            // Like the status buttons: solid white with dark text when focused.
+            weatherCard.setBackground(has ? weatherLit : weatherGlass);
+            weatherCard.setFocusedLook(has);
             if (has) v.setAlpha(1f);
             v.animate().scaleX(has ? 1.05f : 1f).scaleY(has ? 1.05f : 1f).translationZ(has ? dp(10) : 0)
                     .setDuration(Motion.d(200)).setInterpolator(LIFT).start();
@@ -2034,7 +2064,7 @@ public class MainActivity extends Activity {
     /** Carousel focused: the dock slides away and the artwork takes the whole screen (tvOS Top Shelf). */
     boolean heroRequested;
 
-    ImageView avatarView, ccButton, refreshButton, searchButton, netIcon;
+    ImageView avatarView, ccButton, refreshButton, searchButton, homeButton, netIcon;
     /** The search screen while it is open (its layer is also pickerLayer, so Home and idle treat it as an overlay). */
     SearchPanel search;
     android.net.ConnectivityManager.NetworkCallback netCallback;
@@ -2228,24 +2258,25 @@ public class MainActivity extends Activity {
                 default: return false;
             }
         }
-        if (f == refreshButton || f == searchButton || f == ccButton || f == avatarView) {
-            // Status row, left to right: Refresh, Search, Control Center, profile.
+        if (f == refreshButton || f == searchButton || f == homeButton || f == ccButton || f == avatarView) {
+            // Status row, left to right: Refresh, Search, Home automation (if connected), Control Center, profile.
+            List<View> row = new ArrayList<>();
+            row.add(refreshButton);
+            row.add(searchButton);
+            if (homeButton.getVisibility() == View.VISIBLE) row.add(homeButton);
+            row.add(ccButton);
+            row.add(avatarView);
+            int at = row.indexOf(f);
             if (k == KeyEvent.KEYCODE_DPAD_LEFT) {
                 if (down) {
-                    if (f == avatarView) ccButton.requestFocus();
-                    else if (f == ccButton) searchButton.requestFocus();
-                    else if (f == searchButton) refreshButton.requestFocus();
+                    if (at > 0) row.get(at - 1).requestFocus();
                     else if (switcher.getVisibility() == View.VISIBLE) switcher.requestFocus();
                     else if (weatherShown()) weatherCard.requestFocus();
                 }
                 return true;
             }
             if (k == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                if (down) {
-                    if (f == refreshButton) searchButton.requestFocus();
-                    else if (f == searchButton) ccButton.requestFocus();
-                    else if (f == ccButton) avatarView.requestFocus();
-                }
+                if (down && at < row.size() - 1) row.get(at + 1).requestFocus();
                 return true;
             }
             if (k == KeyEvent.KEYCODE_DPAD_DOWN || k == KeyEvent.KEYCODE_BACK) {
@@ -3543,10 +3574,8 @@ public class MainActivity extends Activity {
                 v -> Clicks.setEnabled(this, !Clicks.enabled(this))));
         // Row 5: round shortcuts \u2014 Inputs (TVs with inputs) or Accessibility, controllers, Settings, Search.
         int y4 = yMs + cap + gap;
-        // With Home Assistant connected, its house replaces Search here (Search has its own button in the status row).
-        String last = HomeAssistant.configured(this) ? "house" : "search";
-        String[] g = inputs.isEmpty() ? new String[]{"gamepad", "accessibility", "gear", last}
-                : new String[]{"input", "gamepad", "gear", last};
+        String[] g = inputs.isEmpty() ? new String[]{"gamepad", "accessibility", "gear", "search"}
+                : new String[]{"input", "gamepad", "gear", "search"};
         for (int i = 0; i < g.length; i++) {
             String name = g[i];
             cells.add(ccTile(panel, i * (small + gap), y4, small, small, name, null, null, false, v -> {
@@ -3555,9 +3584,6 @@ public class MainActivity extends Activity {
                     case "accessibility": Suggestions.start(this, new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); break;
                     case "input":
                         showInputs(ccButton);
-                        return;
-                    case "house":
-                        showHomeAssistant(ccButton);
                         return;
                     case "gear":
                         returningFromSettings = true;
@@ -4571,7 +4597,7 @@ public class MainActivity extends Activity {
 
     boolean statusFocused() {
         View f = getCurrentFocus();
-        return f != null && (f == ccButton || f == avatarView || f == refreshButton || f == searchButton);
+        return f != null && (f == ccButton || f == avatarView || f == refreshButton || f == searchButton || f == homeButton);
     }
 
     /** Directional focus inside a popover: nearest cell whose centre lies in that direction. */
