@@ -466,7 +466,6 @@ public class CalendarActivity extends Activity {
         t.setOnFocusChangeListener((v, has) -> {
             t.setBackground(has ? lit : idle);
             t.setTextColor(has ? 0xFF111114 : Color.WHITE);
-            v.animate().scaleX(has ? 1.08f : 1f).scaleY(has ? 1.08f : 1f).setDuration(Motion.d(140)).start();
         });
         t.setOnClickListener(click);
         return t;
