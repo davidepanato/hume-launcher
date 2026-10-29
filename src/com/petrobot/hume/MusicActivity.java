@@ -73,6 +73,7 @@ public class MusicActivity extends Activity {
     }
 
     FrameLayout root;
+    LinearLayout page;
     LinearLayout content;
     ScrollView scroll;
     TextView playerPill, searchPill;
@@ -120,6 +121,8 @@ public class MusicActivity extends Activity {
     boolean lyricSynced;
     String lyricKey = "", fullPictureKey = "";
     int lyricNow = -1;
+    static final int FULL_W = 340;
+    View fullHit, fullKnob;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -133,7 +136,7 @@ public class MusicActivity extends Activity {
         setContentView(root);
         Clicks.quiet(root);
 
-        LinearLayout page = new LinearLayout(this);
+        page = new LinearLayout(this);
         page.setOrientation(LinearLayout.VERTICAL);
         page.setClipChildren(false);
         root.addView(page, new FrameLayout.LayoutParams(-1, -1));
@@ -1009,9 +1012,10 @@ public class MusicActivity extends Activity {
         left.setOrientation(LinearLayout.VERTICAL);
         left.setGravity(Gravity.CENTER_HORIZONTAL);
         left.setClipChildren(false);
-        int lw = Ui.px(this, 330);
+        int lw = Ui.px(this, FULL_W);
+        int cs = Ui.px(this, 270);
         fullCover = roundedImage(Ui.px(this, 14));
-        left.addView(fullCover, new LinearLayout.LayoutParams(lw, lw));
+        left.addView(fullCover, new LinearLayout.LayoutParams(cs, cs));
         fullTitle = text("", 20, "display", 1f);
         fullTitle.setMaxLines(2);
         fullTitle.setEllipsize(TextUtils.TruncateAt.END);
@@ -1030,33 +1034,67 @@ public class MusicActivity extends Activity {
         fullAlbum.setGravity(Gravity.CENTER);
         left.addView(fullAlbum, new LinearLayout.LayoutParams(lw, -2));
 
+        // Progress: a focusable strip. When focused it grows and Left / Right skip 10 s back / forward.
+        FrameLayout hit = new FrameLayout(this);
+        hit.setFocusable(true);
+        hit.setClickable(true);
+        hit.setClipChildren(false);
         FrameLayout track = new FrameLayout(this);
-        track.setBackground(rounded(0x33FFFFFF, Ui.px(this, 4)));
+        track.setBackground(rounded(0x40FFFFFF, Ui.px(this, 4)));
         fullFill = new View(this);
         fullFill.setBackground(rounded(0xFFFFFFFF, Ui.px(this, 4)));
         track.addView(fullFill, new FrameLayout.LayoutParams(0, -1));
-        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(lw, Ui.px(this, 4));
-        bl.topMargin = Ui.px(this, 14);
-        left.addView(track, bl);
+        FrameLayout.LayoutParams tlp2 = new FrameLayout.LayoutParams(-1, Ui.px(this, 5), Gravity.CENTER_VERTICAL);
+        hit.addView(track, tlp2);
+        View knob = new View(this);
+        knob.setBackground(oval(0xFFFFFFFF));
+        knob.setVisibility(View.INVISIBLE);
+        hit.addView(knob, new FrameLayout.LayoutParams(Ui.px(this, 16), Ui.px(this, 16), Gravity.CENTER_VERTICAL));
+        fullKnob = knob;
+        fullHit = hit;
+        hit.setOnFocusChangeListener((v, has) -> {
+            ViewGroup.LayoutParams tl2 = track.getLayoutParams();
+            tl2.height = Ui.px(this, has ? 9 : 5);
+            track.setLayoutParams(tl2);
+            knob.setVisibility(has ? View.VISIBLE : View.INVISIBLE);
+            paintProgress();
+        });
+        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(lw, Ui.px(this, 26));
+        bl.topMargin = Ui.px(this, 8);
+        left.addView(hit, bl);
         fullTime = text("", 11, "regular", 0.6f);
         LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-2, -2);
         tl.topMargin = Ui.px(this, 4);
         left.addView(fullTime, tl);
 
+        // Two rows so nothing runs off the column: transport, then volume.
         LinearLayout controls = new LinearLayout(this);
         controls.setOrientation(LinearLayout.HORIZONTAL);
         controls.setGravity(Gravity.CENTER);
         controls.setClipChildren(false);
         controls.addView(iconButton("media_prev", () -> transport("media_previous_track")), btnLp(0));
         fullPlay = iconButton("media_play", () -> transport("media_play_pause"));
-        controls.addView(fullPlay, btnLp(6));
-        controls.addView(iconButton("media_next", () -> transport("media_next_track")), btnLp(6));
-        controls.addView(iconButton("vol_minus", () -> volume(-0.05f)), btnLp(18));
-        controls.addView(volumeBar(), volLp());
-        controls.addView(iconButton("vol_plus", () -> volume(0.05f)), btnLp(0));
+        controls.addView(fullPlay, btnLp(14));
+        controls.addView(iconButton("media_next", () -> transport("media_next_track")), btnLp(14));
         LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(-2, -2);
-        cl.topMargin = Ui.px(this, 6);
+        cl.topMargin = Ui.px(this, 4);
         left.addView(controls, cl);
+        LinearLayout vols = new LinearLayout(this);
+        vols.setOrientation(LinearLayout.HORIZONTAL);
+        vols.setGravity(Gravity.CENTER);
+        vols.setClipChildren(false);
+        FrameLayout vMinus = iconButton("vol_minus", () -> volume(-0.05f)), vPlus = iconButton("vol_plus", () -> volume(0.05f));
+        vMinus.setId(View.generateViewId());
+        vPlus.setId(View.generateViewId());
+        vMinus.setNextFocusDownId(vMinus.getId());
+        vPlus.setNextFocusDownId(vPlus.getId());
+        vMinus.setNextFocusLeftId(vMinus.getId());
+        vols.addView(vMinus, btnLp(0));
+        vols.addView(volumeBar(), volLp());
+        vols.addView(vPlus, btnLp(0));
+        LinearLayout.LayoutParams vl = new LinearLayout.LayoutParams(-2, -2);
+        vl.topMargin = Ui.px(this, 8);
+        left.addView(vols, vl);
         FrameLayout.LayoutParams llp = new FrameLayout.LayoutParams(lw, -2, Gravity.START | Gravity.CENTER_VERTICAL);
         llp.leftMargin = Ui.px(this, 60);
         full.addView(left, llp);
@@ -1064,7 +1102,7 @@ public class MusicActivity extends Activity {
         // Right: the lyrics.
         lyricScroll = new ScrollView(this);
         lyricScroll.setVerticalScrollBarEnabled(false);
-        lyricScroll.setFocusable(false);
+        lyricScroll.setFocusable(false);   // only plain (untimed) lyrics take focus, see buildPlain
         lyricBox = new LinearLayout(this);
         lyricBox.setOrientation(LinearLayout.VERTICAL);
         lyricBox.setPadding(0, Ui.px(this, 190), 0, Ui.px(this, 190));
@@ -1079,6 +1117,8 @@ public class MusicActivity extends Activity {
         full.addView(fullStatus, slp);
 
         root.addView(full, new FrameLayout.LayoutParams(-1, -1));
+        // The page underneath must not catch the cursor (it is hidden but still focusable).
+        page.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
         full.setAlpha(0f);
         full.animate().alpha(1f).setDuration(Motion.d(200)).start();
         fullPlay.requestFocus();
@@ -1094,6 +1134,7 @@ public class MusicActivity extends Activity {
         handler.removeCallbacks(tick);
         root.removeView(full);
         full = null;
+        page.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
         volBars.removeIf(b -> !isInside(b[0], root));
         if (!cards.isEmpty()) cards.get(0).requestFocus();
     }
@@ -1111,7 +1152,7 @@ public class MusicActivity extends Activity {
             fullCover.setImageBitmap(null);
             Object tag = new Object();
             fullCover.setTag(tag);
-            loadImage(now.picture, tag, fullCover, Ui.px(this, 330), nowNet);
+            loadImage(now.picture, tag, fullCover, Ui.px(this, 270), nowNet);
             fullBackdrop.setImageBitmap(null);
             Object tag2 = new Object();
             fullBackdrop.setTag(tag2);
@@ -1141,12 +1182,7 @@ public class MusicActivity extends Activity {
         public void run() {
             if (full == null || !alive) return;
             double p = position();
-            if (now.duration > 0) {
-                int w = (int) (Ui.px(MusicActivity.this, 330) * Math.min(1.0, p / now.duration));
-                ViewGroup.LayoutParams lp = fullFill.getLayoutParams();
-                lp.width = w;
-                fullFill.setLayoutParams(lp);
-            }
+            paintProgress();
             fullTime.setText(clock(p) + (now.duration > 0 ? "  /  " + clock(now.duration) : ""));
             if (lyricSynced && lyricTimes.length > 0) {
                 long ms = (long) (p * 1000);
@@ -1155,6 +1191,55 @@ public class MusicActivity extends Activity {
                 if (idx != lyricNow) highlight(idx);
             }
             handler.postDelayed(this, 500);
+        }
+    };
+
+    /** Fill and knob of the progress bar for the current position. */
+    void paintProgress() {
+        if (fullFill == null) return;
+        double p = position();
+        int full = Ui.px(this, FULL_W);
+        int w = now.duration > 0 ? (int) (full * Math.min(1.0, p / now.duration)) : 0;
+        ViewGroup.LayoutParams lp = fullFill.getLayoutParams();
+        lp.width = w;
+        fullFill.setLayoutParams(lp);
+        if (fullKnob != null) {
+            FrameLayout.LayoutParams kp = (FrameLayout.LayoutParams) fullKnob.getLayoutParams();
+            kp.leftMargin = Math.max(0, w - Ui.px(this, 8));
+            fullKnob.setLayoutParams(kp);
+        }
+    }
+
+    /** Jumps back or forward in the song (seconds), updating the bar at once. */
+    void seekBy(int seconds) {
+        if (playerId.isEmpty() || now.duration <= 0) return;
+        double target = Math.max(0, Math.min(now.duration - 1, position() + seconds));
+        now.position = target;
+        now.positionAt = System.currentTimeMillis();
+        paintProgress();
+        fullTime.setText(clock(target) + "  /  " + clock(now.duration));
+        final double t = target;
+        final String id = playerId;
+        handler.removeCallbacks(seekSend);
+        pendingSeek = t;
+        handler.postDelayed(seekSend, 450);   // one call after the last press
+    }
+
+    double pendingSeek;
+    final Runnable seekSend = new Runnable() {
+        @Override
+        public void run() {
+            final String id = playerId;
+            final double t = pendingSeek;
+            if (demo) return;   // the made-up song for screenshots never touches a player
+            net.execute(() -> {
+                try {
+                    HomeAssistant.request(MusicActivity.this, "POST", "/api/services/media_player/media_seek",
+                            new JSONObject().put("entity_id", id).put("seek_position", t).toString());
+                } catch (Exception ignored) {
+                    // the next poll shows the real position
+                }
+            });
         }
     };
 
@@ -1175,6 +1260,7 @@ public class MusicActivity extends Activity {
     }
 
     void showLyricMessage(String s) {
+        lyricScroll.setFocusable(false);
         lyricBox.setPadding(0, Ui.px(this, 190), 0, Ui.px(this, 190));
         lyricBox.removeAllViews();
         lyricViews = new TextView[0];
@@ -1299,6 +1385,7 @@ public class MusicActivity extends Activity {
         lyricSynced = false;
         lyricNow = -1;
         lyricBox.setPadding(0, Ui.px(this, 40), 0, Ui.px(this, 60));
+        lyricScroll.setFocusable(true);   // Right from the controls reaches it; Up / Down scroll
         TextView t = text(plain, 16, "medium", 0.9f);
         t.setLineSpacing(0, 1.25f);
         lyricBox.addView(t);
@@ -1342,10 +1429,10 @@ public class MusicActivity extends Activity {
                 Clicks.move(this, ev.getKeyCode());
                 return true;
             }
-            // Plain lyrics scroll with Up / Down (there is nothing above or below to focus).
-            if (full != null && !lyricSynced && lyricScroll != null
-                    && (ev.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP || ev.getKeyCode() == KeyEvent.KEYCODE_DPAD_DOWN)) {
-                lyricScroll.smoothScrollBy(0, (ev.getKeyCode() == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : -1) * Ui.px(this, 120));
+            // On the progress bar Left / Right skip 10 s back / forward (hold to keep going).
+            if (full != null && getCurrentFocus() == fullHit
+                    && (ev.getKeyCode() == KeyEvent.KEYCODE_DPAD_LEFT || ev.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+                seekBy(ev.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT ? 10 : -10);
                 return true;
             }
         }
@@ -1441,6 +1528,13 @@ public class MusicActivity extends Activity {
             return true;
         }
         return false;
+    }
+
+    GradientDrawable oval(int color) {
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setColor(color);
+        return g;
     }
 
     GradientDrawable rounded(int color, float r) {
