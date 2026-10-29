@@ -80,11 +80,13 @@ public class MusicActivity extends Activity {
     final List<FrameLayout> layoutButtons = new ArrayList<>();
     final List<View> cards = new ArrayList<>();
     int tab = 0, layout = 0;
-    boolean searching;
+    boolean searching, startFocused;
     String query = "";
     List<String> shownTitles = new ArrayList<>();
     List<List<MItem>> shownGroups = new ArrayList<>();
     final ExecutorService net = Executors.newFixedThreadPool(3);
+    /** Artwork of what is playing: its own queue, so it never waits behind a screen full of covers. */
+    final ExecutorService nowNet = Executors.newSingleThreadExecutor();
     final Handler handler = new Handler();
     final LruCache<String, Bitmap> bitmaps = new LruCache<String, Bitmap>((int) (Runtime.getRuntime().maxMemory() / 8)) {
         @Override protected int sizeOf(String k, Bitmap b) {
@@ -98,7 +100,9 @@ public class MusicActivity extends Activity {
     List<Player> players = new ArrayList<>();
     final Now now = new Now();
     ImageView npCover;
-    TextView npTitle, npSub, npVolume;
+    TextView npTitle, npSub;
+    /** Volume bars (strip, full screen): {track, fill}. */
+    final List<View[]> volBars = new ArrayList<>();
     FrameLayout npPlay;
     float npVol = -1f;
     boolean alive, demo;
@@ -106,7 +110,7 @@ public class MusicActivity extends Activity {
     // full screen "now playing" with lyrics
     FrameLayout full;
     ImageView fullCover, fullBackdrop;
-    TextView fullTitle, fullArtist, fullAlbum, fullTime, fullStatus, fullVolume;
+    TextView fullTitle, fullArtist, fullAlbum, fullTime, fullStatus;
     View fullFill;
     FrameLayout fullPlay;
     ScrollView lyricScroll;
@@ -514,7 +518,10 @@ public class MusicActivity extends Activity {
                 cards.add(c);
             }
         }
-        if (full == null && !cards.isEmpty() && !inHeader()) cards.get(0).requestFocus();
+        if (full == null && !cards.isEmpty() && (!inHeader() || !startFocused)) {
+            cards.get(0).requestFocus();
+            startFocused = true;
+        }
     }
 
     /** True while focus is on one of the buttons above the list (keep it there when the list reloads). */
@@ -716,9 +723,13 @@ public class MusicActivity extends Activity {
 
     /** Loads artwork into a view (only if the view still shows the same item). */
     void loadImage(String url, Object tag, ImageView into, int width) {
+        loadImage(url, tag, into, width, net);
+    }
+
+    void loadImage(String url, Object tag, ImageView into, int width, ExecutorService ex) {
         if (url == null || url.isEmpty()) return;
         String u = url.startsWith("/") ? HomeAssistant.url(this) + url : sharp(url, width);
-        net.execute(() -> {
+        ex.execute(() -> {
             Bitmap bmp = bitmaps.get(u + "@" + width);
             if (bmp == null) {
                 try {
@@ -762,16 +773,26 @@ public class MusicActivity extends Activity {
         tlp.leftMargin = Ui.px(this, 12);
         bar.addView(texts, tlp);
 
-        bar.addView(iconButton("media_prev", () -> transport("media_previous_track")), btnLp(0));
+        stripBtns.clear();
+        FrameLayout bPrev = iconButton("media_prev", () -> transport("media_previous_track"));
+        bar.addView(bPrev, btnLp(0));
         npPlay = iconButton("media_play", () -> transport("media_play_pause"));
         bar.addView(npPlay, btnLp(6));
-        bar.addView(iconButton("media_next", () -> transport("media_next_track")), btnLp(6));
-        bar.addView(iconButton("vol_minus", () -> volume(-0.05f)), btnLp(22));
-        npVolume = text("", 11.5f, "medium", 0.85f);
-        npVolume.setGravity(Gravity.CENTER);
-        bar.addView(npVolume, new LinearLayout.LayoutParams(Ui.px(this, 40), -2));
-        bar.addView(iconButton("vol_plus", () -> volume(0.05f)), btnLp(0));
-        bar.addView(iconButton("expand", this::openFull), btnLp(22));
+        FrameLayout bNext = iconButton("media_next", () -> transport("media_next_track"));
+        bar.addView(bNext, btnLp(6));
+        FrameLayout bMinus = iconButton("vol_minus", () -> volume(-0.05f));
+        bar.addView(bMinus, btnLp(22));
+        stripBtns.add(bPrev);
+        stripBtns.add(npPlay);
+        stripBtns.add(bNext);
+        stripBtns.add(bMinus);
+        bar.addView(volumeBar(), volLp());
+        FrameLayout bPlus = iconButton("vol_plus", () -> volume(0.05f));
+        bar.addView(bPlus, btnLp(0));
+        FrameLayout bExpand = iconButton("expand", this::openFull);
+        bar.addView(bExpand, btnLp(22));
+        stripBtns.add(bPlus);
+        stripBtns.add(bExpand);
         return bar;
     }
 
@@ -859,10 +880,37 @@ public class MusicActivity extends Activity {
         });
     }
 
+    static final int VOL_W = 96;
+
+    /** A volume bar: a rounded track with a white fill (the level), between the minus and plus buttons. */
+    View volumeBar() {
+        FrameLayout track = new FrameLayout(this);
+        track.setBackground(rounded(0x40FFFFFF, Ui.px(this, 4)));
+        View fill = new View(this);
+        fill.setBackground(rounded(0xFFFFFFFF, Ui.px(this, 4)));
+        track.addView(fill, new FrameLayout.LayoutParams(0, -1));
+        volBars.add(new View[]{track, fill});
+        paintVolume(track, fill);
+        return track;
+    }
+
+    LinearLayout.LayoutParams volLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Ui.px(this, VOL_W), Ui.px(this, 6));
+        lp.leftMargin = Ui.px(this, 10);
+        lp.rightMargin = Ui.px(this, 6);
+        lp.gravity = Gravity.CENTER_VERTICAL;
+        return lp;
+    }
+
+    void paintVolume(View track, View fill) {
+        ViewGroup.LayoutParams lp = fill.getLayoutParams();
+        lp.width = Math.round(Ui.px(this, VOL_W) * Math.max(0f, Math.min(1f, npVol < 0 ? 0f : npVol)));
+        fill.setLayoutParams(lp);
+        track.setAlpha(npVol < 0 ? 0.4f : 1f);
+    }
+
     void showVolume() {
-        String s = npVol < 0 ? "" : Math.round(npVol * 100) + "%";
-        npVolume.setText(s);
-        if (fullVolume != null) fullVolume.setText(s);
+        for (View[] b : volBars) paintVolume(b[0], b[1]);
     }
 
     // ---------------------------------------------------------------- state polling
@@ -897,7 +945,8 @@ public class MusicActivity extends Activity {
                     n.title = a.optString("media_title", "");
                     n.artist = a.optString("media_artist", "");
                     n.album = a.optString("media_album_name", "");
-                    n.picture = a.optString("entity_picture", "");
+                    n.picture = a.optString("entity_picture_local", "");
+                    if (n.picture.isEmpty()) n.picture = a.optString("entity_picture", "");
                     n.duration = a.optDouble("media_duration", 0);
                     n.position = a.optDouble("media_position", 0);
                     long at = parseTime(a.optString("media_position_updated_at", ""));
@@ -934,7 +983,7 @@ public class MusicActivity extends Activity {
             npCover.setImageBitmap(null);
             Object tag = new Object();
             npCover.setTag(tag);
-            loadImage(n.picture, tag, npCover, Ui.px(this, 46));
+            loadImage(n.picture, tag, npCover, Ui.px(this, 46), nowNet);
         }
         showVolume();
         if (full != null) refreshFull(pictureChanged);
@@ -1003,9 +1052,7 @@ public class MusicActivity extends Activity {
         controls.addView(fullPlay, btnLp(6));
         controls.addView(iconButton("media_next", () -> transport("media_next_track")), btnLp(6));
         controls.addView(iconButton("vol_minus", () -> volume(-0.05f)), btnLp(18));
-        fullVolume = text("", 11.5f, "medium", 0.85f);
-        fullVolume.setGravity(Gravity.CENTER);
-        controls.addView(fullVolume, new LinearLayout.LayoutParams(Ui.px(this, 40), -2));
+        controls.addView(volumeBar(), volLp());
         controls.addView(iconButton("vol_plus", () -> volume(0.05f)), btnLp(0));
         LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(-2, -2);
         cl.topMargin = Ui.px(this, 6);
@@ -1047,7 +1094,7 @@ public class MusicActivity extends Activity {
         handler.removeCallbacks(tick);
         root.removeView(full);
         full = null;
-        fullVolume = null;
+        volBars.removeIf(b -> !isInside(b[0], root));
         if (!cards.isEmpty()) cards.get(0).requestFocus();
     }
 
@@ -1064,11 +1111,11 @@ public class MusicActivity extends Activity {
             fullCover.setImageBitmap(null);
             Object tag = new Object();
             fullCover.setTag(tag);
-            loadImage(now.picture, tag, fullCover, Ui.px(this, 330));
+            loadImage(now.picture, tag, fullCover, Ui.px(this, 330), nowNet);
             fullBackdrop.setImageBitmap(null);
             Object tag2 = new Object();
             fullBackdrop.setTag(tag2);
-            loadImage(now.picture, tag2, fullBackdrop, Ui.px(this, 480));
+            loadImage(now.picture, tag2, fullBackdrop, Ui.px(this, 480), nowNet);
         }
         String key = now.artist + "|" + now.title;
         if (!key.equals(lyricKey)) {
@@ -1290,6 +1337,11 @@ public class MusicActivity extends Activity {
                 default:
                     break;
             }
+            if (full == null && (ev.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP || ev.getKeyCode() == KeyEvent.KEYCODE_DPAD_DOWN)
+                    && moveBands(ev.getKeyCode())) {
+                Clicks.move(this, ev.getKeyCode());
+                return true;
+            }
             // Plain lyrics scroll with Up / Down (there is nothing above or below to focus).
             if (full != null && !lyricSynced && lyricScroll != null
                     && (ev.getKeyCode() == KeyEvent.KEYCODE_DPAD_UP || ev.getKeyCode() == KeyEvent.KEYCODE_DPAD_DOWN)) {
@@ -1299,6 +1351,96 @@ public class MusicActivity extends Activity {
         }
         MainActivity.navSound(this, ev);
         return super.dispatchKeyEvent(ev) || Clicks.moveFocus(getWindow(), ev);
+    }
+
+    // ---------------------------------------------------------------- focus zones
+
+    final List<View> stripBtns = new ArrayList<>();
+
+    int centerX(View v) {
+        int[] l = new int[2];
+        v.getLocationOnScreen(l);
+        return l[0] + v.getWidth() / 2;
+    }
+
+    int topY(View v) {
+        int[] l = new int[2];
+        v.getLocationOnScreen(l);
+        return l[1];
+    }
+
+    /** The view whose centre is closest to a horizontal position. */
+    View nearestX(List<View> views, int x) {
+        View best = null;
+        int bd = Integer.MAX_VALUE;
+        for (View v : views) {
+            if (v.getVisibility() != View.VISIBLE) continue;
+            int d = Math.abs(centerX(v) - x);
+            if (d < bd) {
+                bd = d;
+                best = v;
+            }
+        }
+        return best;
+    }
+
+    List<View> headerViews() {
+        List<View> h = new ArrayList<>(tabViews);
+        h.addAll(layoutButtons);
+        h.add(playerPill);
+        h.add(searchPill);
+        return h;
+    }
+
+    /** The covers on the first visible row (the scroll is at the top when the cursor comes back from above). */
+    List<View> firstRow() {
+        List<View> row = new ArrayList<>();
+        if (cards.isEmpty()) return row;
+        int y0 = topY(cards.get(0));
+        for (View c : cards) if (Math.abs(topY(c) - y0) < Ui.px(this, 6)) row.add(c);
+        return row;
+    }
+
+    /**
+     * Up and Down move between three bands, landing on the control straight above or below the cursor:
+     * the header buttons, the playing strip and the covers. Inside the covers they behave as usual.
+     */
+    boolean moveBands(int key) {
+        View f = getCurrentFocus();
+        if (f == null) return false;
+        boolean inHeader = headerViews().contains(f), inStrip = stripBtns.contains(f), inCards = isInside(f, scroll);
+        int x = centerX(f);
+        if (key == KeyEvent.KEYCODE_DPAD_UP) {
+            if (inCards) {
+                List<View> row = firstRow();
+                View c = f;
+                while (c != null && c.getParent() != null && !cards.contains(c)) c = (View) c.getParent();
+                if (c == null || !row.contains(c)) return false;   // not on the first row: normal movement
+                View t = nearestX(stripBtns, x);
+                if (t != null) t.requestFocus();
+                return true;
+            }
+            if (inStrip) {
+                View t = nearestX(headerViews(), x);
+                if (t != null) t.requestFocus();
+                return true;
+            }
+            return inHeader;   // nothing above the header
+        }
+        if (inHeader) {
+            View t = nearestX(stripBtns, x);
+            if (t != null) t.requestFocus();
+            return true;
+        }
+        if (inStrip) {
+            scroll.scrollTo(0, 0);
+            List<View> row = firstRow();
+            View t = nearestX(row, x);
+            if (t == null && !cards.isEmpty()) t = cards.get(0);
+            if (t != null) t.requestFocus();
+            return true;
+        }
+        return false;
     }
 
     GradientDrawable rounded(int color, float r) {
