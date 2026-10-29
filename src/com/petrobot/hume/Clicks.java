@@ -121,6 +121,36 @@ final class Clicks {
     static void quiet(android.app.Dialog d) {
         d.setOnShowListener(x -> {
             if (d.getWindow() != null) quiet(d.getWindow().getDecorView());
+            if (d instanceof android.app.AlertDialog) styleButtons((android.app.AlertDialog) d);
         });
+    }
+
+    /**
+     * The dialog theme's buttons are dark on dark on some TVs (invisible, yet focusable: OK pressed
+     * "Cancel" unseen). Make them light, and turn them white with dark text when focused, like the
+     * rest of Hume.
+     */
+    static void styleButtons(android.app.AlertDialog d) {
+        float dp = d.getContext().getResources().getDisplayMetrics().density;
+        int[] which = {android.app.AlertDialog.BUTTON_POSITIVE, android.app.AlertDialog.BUTTON_NEGATIVE,
+                android.app.AlertDialog.BUTTON_NEUTRAL};
+        for (int w : which) {
+            android.widget.Button b = d.getButton(w);
+            if (b == null) continue;
+            b.setAllCaps(false);
+            b.setTextColor(new android.content.res.ColorStateList(
+                    new int[][]{{android.R.attr.state_focused}, {}}, new int[]{0xFF111114, 0xFFFFFFFF}));
+            android.graphics.drawable.GradientDrawable lit = new android.graphics.drawable.GradientDrawable();
+            lit.setCornerRadius(10 * dp);
+            lit.setColor(0xFFF2F2F7);
+            android.graphics.drawable.GradientDrawable idle = new android.graphics.drawable.GradientDrawable();
+            idle.setCornerRadius(10 * dp);
+            idle.setColor(0x26FFFFFF);
+            android.graphics.drawable.StateListDrawable bg = new android.graphics.drawable.StateListDrawable();
+            bg.addState(new int[]{android.R.attr.state_focused}, lit);
+            bg.addState(new int[]{}, idle);
+            b.setBackground(bg);
+            b.setMinWidth((int) (96 * dp));
+        }
     }
 }

@@ -708,13 +708,16 @@ public class SettingsActivity extends Activity {
                     names[i] = all.get(i)[1];
                     on[i] = HomeAssistant.calendarOn(this, all.get(i)[0], all.get(i)[1]);
                 }
+                // Saved when the dialog closes (Back or Done): on a long list the buttons can be pushed
+                // off the screen, so closing must be enough.
                 dialog("Calendars").setMultiChoiceItems(names, on, (d, i, checked) -> on[i] = checked)
-                        .setPositiveButton("Done", (d, w) -> {
+                        .setPositiveButton("Done", null)
+                        .setOnDismissListener(d -> {
                             List<String> ids = new ArrayList<>();
                             for (int i = 0; i < on.length; i++) if (on[i]) ids.add(all.get(i)[0]);
                             HomeAssistant.setCalendars(this, ids);
                             refreshAll();
-                        }).setNegativeButton("Cancel", null).show();
+                        }).show();
             });
         }).start();
     }
@@ -811,7 +814,7 @@ public class SettingsActivity extends Activity {
                     for (HomeAssistant.Item it : cur) if (it.id.equals(g.get(i).id)) on[i] = true;
                 }
                 dialog(title).setMultiChoiceItems(names, on, (d, i, checked) -> on[i] = checked)
-                        .setPositiveButton("Done", (d, w) -> {
+                        .setOnDismissListener(d -> {
                             List<HomeAssistant.Item> next = new ArrayList<>();
                             for (HomeAssistant.Item it : cur) if (!haGroup(it.domain()).equals(group)) next.add(it);
                             for (int i = 0; i < on.length; i++) if (on[i]) next.add(new HomeAssistant.Item(g.get(i).id, g.get(i).name));
@@ -822,7 +825,7 @@ public class SettingsActivity extends Activity {
                             }
                             HomeAssistant.setItems(this, next);
                             refreshAll();
-                        }).setNegativeButton("Cancel", null).show();
+                        }).show();
             });
         }).start();
     }
